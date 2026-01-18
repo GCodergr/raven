@@ -1,5 +1,3 @@
-// Development game exe. Loads build/hot_reload/game.dll and reloads it whenever it
-// changes.
 // https://github.com/karl-zylinski/odin-raylib-hot-reload-game-template/blob/main/source/main_hot_reload/main_hot_reload.odin
 
 #+private=file

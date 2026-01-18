@@ -1,7 +1,7 @@
-package raven_example_minimal
+package raven_example_hello
 
 import "core:log"
-import "base:runtime"
+import "core:math"
 import rv "../.."
 
 state: ^State
@@ -21,7 +21,7 @@ main :: proc() {
 
     state = prev_state
     if state == nil {
-        rv.init("Minimal Example")
+        rv.init("Raven Hello Example")
         state = new(State)
         state.raven = rv.get_state_ptr()
     }
@@ -41,6 +41,13 @@ main :: proc() {
     rv.bind_texture("thin")
     rv.bind_depth_test(false)
     rv.bind_fill(.All)
+
+    rv.draw_text("Hello World!",
+        rv.get_viewport() * {0.5, 0.5, 0} + {0, math.sin_f32(rv.get_time()) * 100, 0},
+        anchor = 0.5,
+        scale = 4,
+    )
+
     rv.draw_sprite(
         {64, 64 + f32(state.num/2 % 1000), 0.0},
     )

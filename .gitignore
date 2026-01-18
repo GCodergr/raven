@@ -5,3 +5,6 @@
 *.rdi
 *.zip
 *.bin
+
+ols.json
+odinfmt.json

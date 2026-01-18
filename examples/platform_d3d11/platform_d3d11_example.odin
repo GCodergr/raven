@@ -1,10 +1,10 @@
-package platform_demo
+package raven_example_platform_d3d11
 
+// D3D11 code based on:
 // https://gist.github.com/d7samurai/1e9a1f1a366740f7d8a3a20397fcfa6b
 
-import ".."
+import "../../platform"
 import "base:runtime"
-import "core:c"
 import "core:math"
 import "core:fmt"
 import "core:log"
@@ -21,10 +21,12 @@ Vertex :: struct {
 g_verts: [dynamic]Vertex
 g_screen_size: [2]f32
 
+state: platform.State
+
 main :: proc() {
     context.logger = log.create_console_logger()
 
-    platform.init()
+    platform.init(&state)
     defer platform.shutdown()
 
     // file, _ := platform.read_file_by_path_async("README.md")
@@ -44,7 +46,7 @@ main :: proc() {
 
     swapchaindesc := dxgi.SWAP_CHAIN_DESC{
         { 0, 0, {}, .R8G8B8A8_UNORM, .UNSPECIFIED, .STRETCHED },
-        { 1, 0 }, {.RENDER_TEXTURE_OUTPUT}, 2, window.hwnd, true,
+        { 1, 0 }, {.RENDER_TARGET_OUTPUT}, 2, window.hwnd, true,
         .FLIP_DISCARD,
         {},
     }

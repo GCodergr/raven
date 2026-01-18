@@ -1,7 +1,9 @@
-package gpu_demo
+package raven_example_gpu_and_sdl3
+
+// THIS EXAMPLE IS VERY OLD AND NEEDS UPDATING.
 
 import "core:time"
-import gpu ".."
+import gpu "../../gpu"
 import sdl "vendor:sdl3"
 import glm "core:math/linalg/glsl"
 import "core:log"
