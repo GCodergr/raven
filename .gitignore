@@ -5,6 +5,10 @@
 *.rdi
 *.zip
 *.bin
+*.dll
+*.ilk
+*.exp
+*.lib
 
 ols.json
 odinfmt.json
