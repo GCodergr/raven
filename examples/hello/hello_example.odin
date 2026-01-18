@@ -32,24 +32,15 @@ main :: proc() {
         return nil
     }
 
-    if rv.key_pressed(.Space) {
-        assert(false)
-    }
-
     rv.set_layer_params(0, rv.make_screen_camera())
 
-    rv.bind_texture("thin")
-    rv.bind_depth_test(false)
-    rv.bind_fill(.All)
+    rv.bind_texture("thick")
 
     rv.draw_text("Hello World!",
         rv.get_viewport() * {0.5, 0.5, 0} + {0, math.sin_f32(rv.get_time()) * 100, 0},
         anchor = 0.5,
+        spacing = 1,
         scale = 4,
-    )
-
-    rv.draw_sprite(
-        {64, 64 + f32(state.num/2 % 1000), 0.0},
     )
 
     state.num += 1

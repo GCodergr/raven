@@ -722,7 +722,7 @@ new_frame :: proc(present_frame := true, vsync := true) -> (keep_running: bool) 
         gpu.end_frame(sync = vsync)
     }
 
-    gpu.begin_frame()
+    gpu_skip_frame := gpu.begin_frame()
 
     audio.update()
 
@@ -2672,11 +2672,11 @@ draw_text_next :: proc() -> (ok: bool) {
 }
 
 draw_text :: proc(
-    text:       string,
+    text:       string, // UTF-8
     pos:        [3]f32,
     scale:      Vec2 = 1,
-    anchor:     Vec2 = 0,
-    spacing:    Vec2 = 0,
+    anchor:     Vec2 = 0, // 0 = left aligned, 0.5 = centered, 1.0 = right aligned
+    spacing:    Vec2 = 0, // x = character spacing, y = line spacing
     col:        Vec4 = 1,
     rot:        Quat = 1,
 ) {
@@ -2697,13 +2697,6 @@ draw_text :: proc(
     center := pos - (mat[0] * full_size.x * anchor.x + mat[1] * full_size.y * anchor.y)
 
     offs: Vec2
-
-    // draw_sprite(
-    //     center + mat[2] * 0.001 + {full_size.x * 0.5, full_size.y * 0.5, 0},
-    //     rect = {0, 1.0/128.0},
-    //     scale = full_size,
-    //     col = RED,
-    // )
 
     for r in text {
         if rune_is_drawable(r) {
@@ -2848,6 +2841,8 @@ draw_triangle :: proc() {}
 upload_gpu_layers :: proc() {
     assert(!_state.uploaded_gpu_draws)
     _state.uploaded_gpu_draws = true
+
+    // TODO: split this up, it could be useful to let the user call parts of this manually.
 
     consts_buf: [MAX_DRAW_LAYERS]Draw_Layer_Constants
 
