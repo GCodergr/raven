@@ -6,7 +6,7 @@ fn vs_main(
     @builtin(vertex_index)   vid     : u32,
     @builtin(instance_index) inst_id : u32
 ) -> VS_Out {
-    let inst = instances[inst_id + layer_consts.instance_offset];
+    let inst = instances[inst_id + batch_consts.instance_offset];
     let vert = verts[vid + inst.vert_offs];
 
     let world_pos = inst.pos + (inst.mat * vert.pos);

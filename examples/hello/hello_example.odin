@@ -10,47 +10,53 @@ import rv "../.."
 import "../../gpu"
 import "../../platform"
 import "../../audio"
-
+import "../../ufmt"
 
 state: ^State
+
 State :: struct {
     num:    i32,
-    raven:  ^rv.State,
 }
 
 main :: proc() {
-    rv.run_main_loop(cast(rv.Step_Proc)_step)
+    fmt.println("Hello")
+    rv.run_module_loop(_module_api())
 }
 
-@export _step :: proc "contextless" (prev_state: ^State) -> ^State {
-    context = rv.default_context()
-    // THIS LEAKS THE LOGGER FUCK
-    context.logger = log.create_console_logger()
+@export _module_api :: proc "contextless" () -> (result: rv.Module_API) {
+    runtime.print_string("MODULE API")
+    result = {
+        init = transmute(rv.Init_Proc)_init,
+        shutdown = transmute(rv.Shutdown_Proc)_shutdown,
+        update = transmute(rv.Update_Proc)_update,
+    }
+    return result
+}
+
+_init :: proc() -> ^State {
+    log.info("Init")
+    state = new(State)
+
+    rv.init_window("Raven Hello Example")
+
+    return state
+}
+
+_shutdown :: proc(prev_state: ^State) {
+    log.info("Shutdown")
+    state = prev_state
+}
+
+_update :: proc(prev_state: ^State) -> ^State {
+    log.info("Update")
 
     state = prev_state
-    if state == nil {
-        rv.init("Raven Hello Example")
-        state = new(State)
-        state.raven = rv.get_state_ptr()
 
-        print_member_sizes(rv.State)
-        print_member_sizes(audio.State)
-        print_member_sizes(gpu.State)
+    if !rv.begin_frame() {
+        return nil
     }
 
-    // fmt.printfln("size_of(rv.State) = %M", size_of(rv.State))
-    // fmt.printfln("size_of(gpu.State) = %M", size_of(gpu.State))
-    // fmt.printfln("size_of(platform.State) = %M", size_of(platform.State))
-    // fmt.printfln("size_of(audio.State) = %M", size_of(audio.State))
-
-    rv.set_state_ptr(state.raven)
-
-    log.info("new frame")
-
-    if !rv.new_frame() {
-        if !gpu._state.fully_initialized {
-            return state
-        }
+    if rv.key_pressed(.Escape) {
         return nil
     }
 
@@ -75,6 +81,10 @@ main :: proc() {
             scale = 4,
             col = i == 0 ? rv.WHITE : rv.BLUE,
         )
+    }
+
+    if rv.key_pressed(.Escape) {
+        return nil
     }
 
     rv.bind_layer(1)

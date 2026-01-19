@@ -1,13 +1,13 @@
 struct Global_Constants {
-    time        : f32;
-    delta_time  : f32;
-    frame       : u32;
-    resolution  : vec2<i32>;
-    rand_seed   : u32;
-    param0      : u32;
-    param1      : u32;
-    param2      : u32;
-    param3      : u32;
+    time        : f32,
+    delta_time  : f32,
+    frame       : u32,
+    resolution  : vec2<i32>,
+    rand_seed   : u32,
+    param0      : u32,
+    param1      : u32,
+    param2      : u32,
+    param3      : u32,
 };
 
 struct Batch_Constants {
@@ -24,10 +24,10 @@ struct Layer_Constants {
 var<uniform> rv_global : Global_Constants;
 
 @group(0) @binding(9)
-var<uniform> layer_constants : Layer_Constants;
+var<uniform> layer_consts : Layer_Constants;
 
 @group(0) @binding(10)
-var<uniform> batch_constants : Batch_Constants;
+var<uniform> batch_consts : Batch_Constants;
 
 struct Vertex {
     pos    : vec3<f32>,

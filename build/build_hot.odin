@@ -19,9 +19,18 @@ when ODIN_OS == .Windows {
     DLL_EXT :: ".so"
 }
 
+Hotreload_Module_API_Proc :: #type proc "contextless" () -> Hotreload_Module_API
+
+Hotreload_Module_API :: struct {
+    init:       rawptr,
+    shutdown:   rawptr,
+    update:     rawptr,
+}
+
 Hotreload_Module :: struct {
     mod:            platform.Module,
-    callback:       proc "contextless" (rawptr) -> rawptr,
+    api:            Hotreload_Module_API,
+    callback:       proc "contextless" (prev_data: rawptr, api: Hotreload_Module_API) -> rawptr,
 }
 
 Hotreload_File :: struct {
@@ -138,7 +147,7 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
     any_changes := false
 
     for {
-        prev_data = module.callback(prev_data)
+        prev_data = module.callback(prev_data, module.api)
 
         if prev_data == nil {
             break
@@ -203,7 +212,21 @@ load_hotreload_module :: proc(path: string) -> (result: Hotreload_Module, ok: bo
         return {}, false
     }
 
-    result.callback = auto_cast(platform.module_symbol_address(module, "_step"))
+    get_module_api_proc := cast(Hotreload_Module_API_Proc)platform.module_symbol_address(module, "_module_api")
+
+    if get_module_api_proc == nil {
+        fmt.println("Hotreload: Failed to find _module_api procedure")
+        return {}, false
+    }
+
+    result.api = get_module_api_proc()
+
+
+    result.callback = auto_cast(platform.module_symbol_address(module, "_module_hot_step"))
+
+    fmt.println("Hotreload API: ", result.api)
+
+    fmt.println("Hotreload callback: ", result.callback)
 
     if result.callback == nil {
         return {}, false

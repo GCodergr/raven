@@ -1,6 +1,7 @@
 #+vet explicit-allocators shadowing
 package raven
 
+import "core:mem"
 import "base:intrinsics"
 import "core:strings"
 import "core:log"
@@ -8,6 +9,7 @@ import "core:slice"
 import "core:path/filepath"
 import "core:math/linalg"
 import "core:math"
+import "core:os" // TODO nuke this bullshit
 import "base:runtime"
 import debug_trace "core:debug/trace"
 import stbi "vendor:stb/image"
@@ -133,7 +135,7 @@ Fill_Mode :: enum u8 {
 _state: ^State
 
 State :: struct #align(64) {
-    is_dynamic:             bool,
+    initialized:            bool,
     start_time:             u64,
     curr_time:              u64,
     last_time:              u64,
@@ -143,10 +145,10 @@ State :: struct #align(64) {
     allocator:              runtime.Allocator,
     window:                 platform.Window,
     dpi_scale:              f32,
-    step_proc:              Step_Proc,
-    step_result:            rawptr,
+    module_result:          rawptr,
 
     debug_trace_ctx:        debug_trace.Context,
+    context_state:          Context_State,
 
     uploaded_gpu_draws:     bool,
 
@@ -217,6 +219,11 @@ State :: struct #align(64) {
     platform_state:         platform.State,
     gpu_state:              gpu.State,
     audio_state:            audio.State,
+}
+
+Context_State :: struct {
+    logger:     log.File_Console_Logger_Data, // TODO: replace by custom
+    tracking:   mem.Tracking_Allocator,
 }
 
 // VFS file
@@ -537,14 +544,14 @@ DEFAULT_SAMPLERS :: [2]gpu.Sampler_Desc{
 // MARK: Base
 //
 
-set_state_ptr :: proc(state: ^State) {
+set_state_ptr :: proc "contextless" (state: ^State) {
     _state = state
     platform._state = &_state.platform_state
     gpu._state = &_state.gpu_state
     audio._state = &_state.audio_state
 }
 
-get_state_ptr :: proc() -> (state: ^State) {
+get_state_ptr :: proc "contextless" () -> (state: ^State) {
     return _state
 }
 
@@ -554,18 +561,31 @@ is_initialized :: proc "contextless" () -> bool {
         return false
     }
 
-    return true
+    return _state.initialized
 }
 
-Step_Proc :: #type proc "contextless" (_prev_data: rawptr) -> (data: rawptr)
+Init_Proc ::       #type proc() -> rawptr
+Shutdown_Proc ::   #type proc(rawptr)
+Update_Proc ::     #type proc(rawptr) -> rawptr
+
+Module_API :: struct {
+    init:       Init_Proc,
+    shutdown:   Shutdown_Proc,
+    update:     Update_Proc,
+}
 
 // Default runner for a raven app.
 // This is optional, but it's a good default.
 // Calling this does nothing when compiling as a DLL, it's the responsibility
 // of whoever loaded the DLL (e.g. hotreload runner) to call the app.
 // NOTE: Things like reload never get called in this mode.
-run_main_loop :: proc(_step_proc: Step_Proc) {
-    when ODIN_OS == .JS {
+run_module_loop :: proc(api: Module_API) {
+    ensure(api.init != nil)
+    ensure(api.update != nil)
+
+    when ODIN_BUILD_MODE == .Dynamic {
+        // Nothing
+    } else when ODIN_OS == .JS {
         runtime.print_string("Running main loop...\n")
 
         prev := _step_proc(nil)
@@ -579,14 +599,33 @@ run_main_loop :: proc(_step_proc: Step_Proc) {
         _state.step_proc = _step_proc
         _state.step_result = prev
 
-    } else when ODIN_BUILD_MODE != .Dynamic { // do nothing in DLLs
-        prev: rawptr
+    } else when ODIN_OS == .Windows || ODIN_OS == .Linux || ODIN_OS == .Darwin {
+
+        init_state(context.allocator)
+
+        ensure(_state != nil)
+
+        _state.module_result = api.init()
+
+        ensure(_state.window != {}, "Init procedure must create a window")
+        ensure(_state.gpu_state.fully_initialized)
+
         for {
-            prev = _step_proc(prev)
-            if prev == nil {
+            res := api.update(_state.module_result)
+
+            if res == nil {
                 break
             }
+
+            _state.module_result = res
         }
+
+        if api.shutdown != nil {
+            api.shutdown(_state.module_result)
+        }
+
+    } else {
+        panic("Cannot run module loop on this platform")
     }
 }
 
@@ -597,13 +636,17 @@ when ODIN_OS == .JS {
         assert(_state != nil)
         assert(_state.step_proc != nil)
 
+        if !_state.initialized {
+            if _state.gpu_state.fully_initialized {
+                _finish_init()
+            } else {
+                return true
+            }
+        }
+
         screen := platform.get_window_frame_rect({}).size
         swap, ok := gpu.update_swapchain(nil, screen)
         assert(ok)
-
-        if !gpu._state.fully_initialized {
-            return true
-        }
 
         prev := _state.step_proc(_state.step_result)
 
@@ -615,56 +658,130 @@ when ODIN_OS == .JS {
 
         return true
     }
+} else when ODIN_BUILD_MODE == .Dynamic {
+    @(export)
+    _module_hot_step :: proc "contextless" (prev_state: ^State, api: Module_API) -> ^State {
+        if prev_state == nil {
+            // First init
+
+            context = runtime.default_context()
+
+            init_state(context.allocator)
+
+            context = get_context()
+
+            ensure(_state != nil)
+
+            _state.module_result = api.init()
+
+            ensure(_state.window != {}, "Init procedure must create a window")
+            ensure(_state.gpu_state.fully_initialized)
+
+            return _state
+
+        } else if _state == nil {
+            // Hot-reload
+            _state = prev_state
+
+            return _state
+        }
+
+        // Regular frame
+
+        context = get_context()
+
+        _state.module_result = api.update(_state.module_result)
+
+        if _state.module_result == nil {
+            return nil
+        }
+
+        return _state
+    }
 }
 
 
+get_context :: proc "contextless" () -> (result: runtime.Context) {
+    result = runtime.default_context()
+
+    result.assertion_failure_proc = _assertion_failure_proc
+
+    result.allocator = {
+        procedure = mem.tracking_allocator_proc,
+        data = &_state.context_state.tracking,
+    }
+
+    result.logger = runtime.Logger{
+        procedure = log.console_logger_proc,
+        data = &_state.context_state.logger,
+        lowest_level = .Debug,
+        options = {.Level, .Time, .Short_File_Path, .Line, .Procedure, .Terminal_Color},
+    }
+
+    return result
+}
+
+init_context_state :: proc(ctx: ^Context_State) {
+    _state.context_state.logger = {
+        file_handle = os.INVALID_HANDLE, // TODO nuke this bullshit
+	    ident = "",
+    }
+
+    mem.tracking_allocator_init(&_state.context_state.tracking, context.allocator, context.allocator)
+}
+
+// Create state, init context, init subsystems.
+init_state :: proc(allocator := context.allocator) {
+    ensure(_state == nil)
+
+    state_err: runtime.Allocator_Error
+    _state, state_err = new(State, allocator = allocator)
+
+    if state_err != nil {
+        panic("Failed to allocate Raven State")
+    }
+
+    _state.allocator = allocator
+
+    init_context_state(&_state.context_state)
+
+    context = get_context()
+
+    platform.init(&_state.platform_state)
+    platform.set_dpi_aware()
+    _state.start_time = platform.get_time_ns()
+
+    audio.init(&_state.audio_state)
+
+    debug_trace.init(&_state.debug_trace_ctx)
+}
 
 // No-op if already initialized.
-init :: proc(name := "Raven App", style: platform.Window_Style = .Regular, allocator := context.allocator) {
-    if _state != nil {
-        return
-    }
-
-    state := new(State, allocator)
-    state.is_dynamic = true
-
-    platform.init(&state.platform_state)
-
-    // platform.set_dpi_aware()
-
-    window := platform.create_window(name, style = style)
-
-    gpu.init(&state.gpu_state, platform.get_native_window_ptr(window))
-
-    audio.init(&state.audio_state)
-
-    init_ex(state, window, allocator)
-}
-
-
-init_ex :: proc(state: ^State, window: platform.Window, allocator: runtime.Allocator) {
-    if _state != nil {
-        return
-    }
-
-    assert(state != nil)
+init_window :: proc(name := "Raven App", style: platform.Window_Style = .Regular, allocator := context.allocator) {
+    ensure(_state != nil)
+    ensure(_state.window == {})
     assert(platform._state != nil)
-    assert(gpu._state != nil)
     assert(audio._state != nil)
 
-    log.info("Initializing Raven...")
+    _state.window = platform.create_window(name, style = style)
 
-    _state = state
+    gpu.init(&_state.gpu_state, platform.get_native_window_ptr(_state.window))
 
     // TODO: more safety checking in the entire init function
 
-    _state.allocator = allocator
-    _state.window = window
-    _state.start_time = platform.get_time_ns()
+    if ODIN_OS == .Windows {
+        assert(_state.gpu_state.fully_initialized)
+    }
 
-    debug_trace.init(&_state.debug_trace_ctx)
+    if _state.gpu_state.fully_initialized {
+        _finish_init()
+    }
+}
 
-    _state.screen_size = platform.get_window_frame_rect(window).size
+_finish_init :: proc() {
+    assert(_state != nil)
+
+    _state.screen_size = platform.get_window_frame_rect(_state.window).size
 
     // pool128_ok := create_texture_pool(128, 64)
     // assert(pool128_ok)
@@ -674,7 +791,7 @@ init_ex :: proc(state: ^State, window: platform.Window, allocator: runtime.Alloc
     _state.render_textures_gen[DEFAULT_RENDER_TEXTURE.index] = DEFAULT_RENDER_TEXTURE.gen
     _state.render_textures[DEFAULT_RENDER_TEXTURE.index] = Render_Texture{
         size = _state.screen_size,
-        color = gpu.update_swapchain(platform.get_native_window_ptr(window), _state.screen_size) or_else panic("gpu"),
+        color = {},
         depth = gpu.create_texture_2d("rv-def-rentex-depth", .D_F32, _state.screen_size, render_texture = true) or_else panic("gpu"),
     }
 
@@ -768,6 +885,8 @@ init_ex :: proc(state: ^State, window: platform.Window, allocator: runtime.Alloc
     _state.default_ps = create_pixel_shader("default", default_ps) or_else panic("Failed to load default pixel shader")
 
     log.info("Raven initialized successfully")
+
+    _state.initialized = true
 }
 
 shutdown :: proc() {
@@ -779,14 +898,10 @@ shutdown :: proc() {
     gpu.shutdown()
     platform.shutdown()
 
-    if _state.is_dynamic {
-        free(_state, _state.allocator)
-    }
-
     _state = nil
 }
 
-new_frame :: proc(present_frame := true, vsync := true) -> (keep_running: bool) {
+begin_frame :: proc(present_frame := true, vsync := true) -> (keep_running: bool) {
     assert(_state != nil)
 
     keep_running = true
@@ -799,9 +914,9 @@ new_frame :: proc(present_frame := true, vsync := true) -> (keep_running: bool) 
         gpu.end_frame(sync = vsync)
     }
 
-    gpu_skip_frame := gpu.begin_frame()
-    if gpu_skip_frame {
-        return false
+    gpu_can_begin_frame := gpu.begin_frame()
+    if !gpu_can_begin_frame {
+        return true
     }
 
     audio.update()
@@ -933,6 +1048,11 @@ new_frame :: proc(present_frame := true, vsync := true) -> (keep_running: bool) 
 
     _state.screen_size = platform.get_window_frame_rect(_state.window).size
 
+    assert(_state.render_textures_gen[DEFAULT_RENDER_TEXTURE.index] == DEFAULT_RENDER_TEXTURE.gen)
+    _state.render_textures[DEFAULT_RENDER_TEXTURE.index].size = _state.screen_size
+    _state.render_textures[DEFAULT_RENDER_TEXTURE.index].color = gpu.update_swapchain(platform.get_native_window_ptr(_state.window), _state.screen_size) or_else panic("gpu")
+
+
     return keep_running
 }
 
@@ -946,14 +1066,6 @@ _clear_draw_layers :: proc() {
         layer.mesh_batches = {}
         layer.triangle_batches = {}
     }
-}
-
-default_context :: proc "contextless" () -> (result: runtime.Context) {
-    result = runtime.default_context()
-    result.assertion_failure_proc = _assertion_failure_proc
-    // result.logger =
-    // result.allocator = tracking_allocator
-    return result
 }
 
 

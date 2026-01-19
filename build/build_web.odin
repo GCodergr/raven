@@ -60,8 +60,6 @@ export_web :: proc(dst_dir: string, pkg_name: string, pkg_path: string) {
         max_mem_pages = max_mem_pages,
     )
 
-    fmt.println(html)
-
     platform.write_file_by_path(
         fmt.tprintf("%s/index.html", dst_dir),
         transmute([]byte)html,

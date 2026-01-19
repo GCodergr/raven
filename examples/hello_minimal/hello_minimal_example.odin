@@ -11,7 +11,7 @@ main :: proc() {
     rv.init("Raven Hello Example")
     defer rv.shutdown()
 
-    for rv.new_frame() {
+    for rv.begin_frame() {
         rv.set_layer_params(0, rv.make_screen_camera())
 
         rv.bind_texture("thin")

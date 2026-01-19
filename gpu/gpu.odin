@@ -720,12 +720,15 @@ create_texture_2d :: proc(
     rw_resource:        bool = false,
     data:               []byte = nil,
 ) -> (result: Resource_Handle, ok: bool) {
+    log.info("Creating texture:", name)
+
     validate(format != .Invalid)
     validate(size.x > 0)
     validate(size.x <= MAX_TEXTURE_2D_SIZE)
     validate(size.y > 0)
     validate(size.y <= MAX_TEXTURE_2D_SIZE)
     validate(array_depth < MAX_TEXTURE_ARRAY_DEPTH)
+
 
     if render_texture {
         validate(array_depth == 1)
@@ -780,6 +783,8 @@ create_buffer :: proc(
     usage:              Usage = .Default,
     data:               []u8 = nil,
 ) -> (result: Resource_Handle, ok: bool) #optional_ok {
+    log.info("Creating texture:", name)
+
     size := size
 
     if size == 0 && data != nil {

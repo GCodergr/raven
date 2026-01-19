@@ -694,7 +694,7 @@ when BACKEND == BACKEND_WGPU {
             _wgpu_texture_format(format),
         }
 
-        result.tex = wgpu.DeviceCreateTexture(_state.device, &wgpu.TextureDescriptor{
+        tex_desc := wgpu.TextureDescriptor{
             label = name,
             usage = usage,
             dimension = ._2D,
@@ -708,7 +708,11 @@ when BACKEND == BACKEND_WGPU {
             sampleCount = u32(1),
             viewFormatCount = len(formats),
             viewFormats = &formats[0],
-        })
+        }
+
+        log.info(tex_desc)
+
+        result.tex = wgpu.DeviceCreateTexture(_state.device, &tex_desc)
 
         if result.tex == nil {
             return {}, false

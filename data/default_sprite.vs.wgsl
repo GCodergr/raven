@@ -8,7 +8,7 @@ fn vs_main(
 ) -> VS_Out {
 
     let inst : Sprite_Inst =
-        instances[inst_id + batch_constants.instance_offset];
+        instances[inst_id + batch_consts.instance_offset];
 
     let local_uv = vec2<f32>(
         f32(vid & 1u),
@@ -24,7 +24,7 @@ fn vs_main(
 
     var o : VS_Out;
 
-    o.pos = layer_constants.view_proj * vec4<f32>(world_pos, 1.0);
+    o.pos = layer_consts.view_proj * vec4<f32>(world_pos, 1.0);
 
     o.world_pos = world_pos;
 
