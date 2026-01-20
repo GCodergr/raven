@@ -9,7 +9,8 @@ import "core:slice"
 import "core:path/filepath"
 import "core:math/linalg"
 import "core:math"
-import "core:os" // TODO nuke this bullshit
+import "core:os" // TODO nuke this
+import "core:fmt"
 import "base:runtime"
 import debug_trace "core:debug/trace"
 import stbi "vendor:stb/image"
@@ -146,6 +147,7 @@ State :: struct #align(64) {
     window:                 platform.Window,
     dpi_scale:              f32,
     module_result:          rawptr,
+    module_api:             Module_API,
 
     debug_trace_ctx:        debug_trace.Context,
     context_state:          Context_State,
@@ -584,45 +586,58 @@ run_module_loop :: proc(api: Module_API) {
     ensure(api.update != nil)
 
     when ODIN_BUILD_MODE == .Dynamic {
+
         // Nothing
+
     } else when ODIN_OS == .JS {
-        runtime.print_string("Running main loop...\n")
 
-        prev := _step_proc(nil)
+        init_state(context.allocator)
 
-        runtime.print_string("main loop inited\n")
+        context = get_context()
 
-        if _state == nil {
+        _state.module_api = api
+        _state.module_result = api.init(nil)
+
+        if _state.module_result == nil {
             return
         }
-
-        _state.step_proc = _step_proc
-        _state.step_result = prev
 
     } else when ODIN_OS == .Windows || ODIN_OS == .Linux || ODIN_OS == .Darwin {
 
         init_state(context.allocator)
 
-        ensure(_state != nil)
+        context = get_context()
 
         _state.module_result = api.init()
+
+        if _state.module_result == nil {
+            return
+        }
 
         ensure(_state.window != {}, "Init procedure must create a window")
         ensure(_state.gpu_state.fully_initialized)
 
         for {
+            if !begin_frame() {
+                break
+            }
+
             res := api.update(_state.module_result)
 
             if res == nil {
                 break
             }
 
+            end_frame()
+
             _state.module_result = res
         }
 
-        if api.shutdown != nil {
+        if api.shutdown != nil && _state.module_result != nil {
             api.shutdown(_state.module_result)
         }
+
+        _shutdown_state()
 
     } else {
         panic("Cannot run module loop on this platform")
@@ -630,11 +645,19 @@ run_module_loop :: proc(api: Module_API) {
 }
 
 when ODIN_OS == .JS {
-    @export step :: proc(dt: f32) -> (keep_running: bool) {
+    @(export)
+    step :: proc(dt: f32) -> (keep_running: bool) {
         log.info("Step")
 
         assert(_state != nil)
         assert(_state.step_proc != nil)
+
+        // In case init returned nil
+        if _state.module_result == nil {
+            return false
+        }
+
+        context = get_context()
 
         if !_state.initialized {
             if _state.gpu_state.fully_initialized {
@@ -648,13 +671,21 @@ when ODIN_OS == .JS {
         swap, ok := gpu.update_swapchain(nil, screen)
         assert(ok)
 
-        prev := _state.step_proc(_state.step_result)
+        prev_result := _state.module_result
 
-        if prev == nil {
+        if !begin_frame() {
+            _state.module_api.shutdown(prev_result)
             return false
         }
 
-        _state.step_result = prev
+        _state.module_result = _state.module_api.update(_state.module_result)
+
+        if _state.module_result == nil {
+            _state.module_api.shutdown(prev_result)
+            return false
+        }
+
+        end_frame()
 
         return true
     }
@@ -665,6 +696,8 @@ when ODIN_OS == .JS {
             // First init
 
             context = runtime.default_context()
+
+            fmt.println("raven hot step: init")
 
             init_state(context.allocator)
 
@@ -681,20 +714,41 @@ when ODIN_OS == .JS {
 
         } else if _state == nil {
             // Hot-reload
-            _state = prev_state
+            set_state_ptr(prev_state)
+
+            context = runtime.default_context()
+            fmt.println("raven hot step: reload")
 
             return _state
         }
 
         // Regular frame
 
+        if _state.module_result == nil {
+            return nil
+        }
+
         context = get_context()
+
+        prev_result := _state.module_result
+
+        if !begin_frame() {
+            if _state.module_api.shutdown != nil {
+                _state.module_api.shutdown(prev_result)
+            }
+            return nil
+        }
 
         _state.module_result = api.update(_state.module_result)
 
         if _state.module_result == nil {
+            if _state.module_api.shutdown != nil {
+                _state.module_api.shutdown(prev_result)
+            }
             return nil
         }
+
+        end_frame()
 
         return _state
     }
@@ -889,7 +943,7 @@ _finish_init :: proc() {
     _state.initialized = true
 }
 
-shutdown :: proc() {
+_shutdown_state :: proc() {
     if _state == nil {
         return
     }
@@ -898,10 +952,50 @@ shutdown :: proc() {
     gpu.shutdown()
     platform.shutdown()
 
+    {
+        tr := _state.context_state.tracking
+
+        fmt.printfln("Total allocation count:   {0}",                tr.total_allocation_count)
+        fmt.printfln("Total free count:         {0}",                tr.total_free_count)
+        fmt.printfln("Total memory allocated:   {0:M} ({0} bytes) ", tr.total_memory_allocated)
+        fmt.printfln("Total memory freed:       {0:M} ({0} bytes) ", tr.total_memory_freed)
+        fmt.printfln("Current memory allocated: {0:M} ({0} bytes) ", tr.current_memory_allocated)
+
+        fmt.printfln("Memory Leaks:")
+        for addr, it in tr.allocation_map {
+            fmt.printfln("\t[{0}:{1}:{2}:{3}] Leaked {4:p} of size {5:M} ({5} bytes) with alignment {6:M}",
+                it.location.file_path,
+                it.location.procedure,
+                it.location.line,
+                it.location.column,
+                it.memory,
+                it.size,
+                it.alignment,
+            )
+        }
+        fmt.println("\tTotal Memory Leaks:", len(tr.allocation_map))
+
+        fmt.println("Bad Frees:")
+        for it in tr.bad_free_array {
+            fmt.println("\t[{0}:{1}:{2}:{3}] Freed invalid {4:p}",
+                it.location.file_path,
+                it.location.procedure,
+                it.location.line,
+                it.location.column,
+                it.memory,
+            )
+        }
+        fmt.println("\tTotal Bad Frees:", len(tr.bad_free_array))
+
+        fmt.printfln("Total peak memory: {0:M} ({0} bytes) ", tr.peak_memory_allocated + size_of(State))
+    }
+
+    free(_state, _state.allocator)
+
     _state = nil
 }
 
-begin_frame :: proc(present_frame := true, vsync := true) -> (keep_running: bool) {
+begin_frame :: proc() -> (keep_running: bool) {
     assert(_state != nil)
 
     keep_running = true
@@ -910,14 +1004,8 @@ begin_frame :: proc(present_frame := true, vsync := true) -> (keep_running: bool
     // In case big file allocations happened...
     defer free_all(context.temp_allocator)
 
-    if _state.frame_index != 0 {
-        gpu.end_frame(sync = vsync)
-    }
-
     gpu_can_begin_frame := gpu.begin_frame()
-    if !gpu_can_begin_frame {
-        return true
-    }
+    assert(gpu_can_begin_frame)
 
     audio.update()
 
@@ -1054,6 +1142,10 @@ begin_frame :: proc(present_frame := true, vsync := true) -> (keep_running: bool
 
 
     return keep_running
+}
+
+end_frame :: proc(vsync := true) {
+    gpu.end_frame(sync = vsync)
 }
 
 _clear_draw_layers :: proc() {
@@ -2833,11 +2925,6 @@ draw_sprite :: proc(
         tex_slice = _state.bind_state.texture_slice,
     }
 
-    if len(draw_layer.sprites) == 0 {
-        draw_layer.sprites = make_soa_dynamic_array_len_cap(#soa[dynamic]Sprite_Draw,
-            0, draw_layer.last_sprites_len, context.temp_allocator)
-    }
-
     key := Draw_Sort_Key{
         texture         = _state.bind_state.texture,
         texture_mode    = _state.bind_state.texture_mode,
@@ -2852,6 +2939,16 @@ draw_sprite :: proc(
         dist            = 0,
     }
 
+    if len(draw_layer.sprites) == 0 {
+        draw_layer.sprites = make_soa_dynamic_array_len_cap(
+            #soa[dynamic]Sprite_Draw,
+            0,
+            max(256, draw_layer.last_sprites_len),
+            context.temp_allocator,
+        )
+    }
+
+    assert(draw_layer.sprites.allocator == context.temp_allocator)
     append_soa_elem(&draw_layer.sprites, Sprite_Draw{
         key = key,
         inst = inst,
@@ -3018,10 +3115,15 @@ draw_mesh_by_handle :: proc(
     draw_layer := &_state.draw_layers[_state.bind_state.draw_layer]
 
     if len(draw_layer.meshes) == 0 {
-        draw_layer.meshes = make_soa_dynamic_array_len_cap(#soa[dynamic]Mesh_Draw,
-            0, draw_layer.last_meshes_len, context.temp_allocator)
+        draw_layer.meshes = make_soa_dynamic_array_len_cap(
+            #soa[dynamic]Mesh_Draw,
+            0,
+            max(256, draw_layer.last_meshes_len),
+            context.temp_allocator,
+        )
     }
 
+    assert(draw_layer.meshes.allocator == context.temp_allocator)
     append_soa_elem(&draw_layer.meshes, draw)
 }
 

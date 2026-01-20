@@ -44,8 +44,8 @@ main :: proc() {
         clean_hot(pkg_name)
 
     case .build_hot:
-        latest, _ := hotreload_find_latest_dll(fl.pkg)
-        log.info("Building %i", latest.index + 1)
+        latest, _ := hotreload_find_latest_dll(pkg_name)
+        log.infof("Building %i", latest.index + 1)
         compile_hot(fl.pkg, pkg_name = pkg_name, index = latest.index + 1)
     }
 }

@@ -24,7 +24,7 @@ main :: proc() {
 }
 
 @export _module_api :: proc "contextless" () -> (result: rv.Module_API) {
-    runtime.print_string("MODULE API")
+    runtime.print_string("MODULE API\n")
     result = {
         init = transmute(rv.Init_Proc)_init,
         shutdown = transmute(rv.Shutdown_Proc)_shutdown,
@@ -44,17 +44,16 @@ _init :: proc() -> ^State {
 
 _shutdown :: proc(prev_state: ^State) {
     log.info("Shutdown")
+
     state = prev_state
+
+    free(state)
 }
 
 _update :: proc(prev_state: ^State) -> ^State {
     log.info("Update")
 
     state = prev_state
-
-    if !rv.begin_frame() {
-        return nil
-    }
 
     if rv.key_pressed(.Escape) {
         return nil
@@ -81,10 +80,6 @@ _update :: proc(prev_state: ^State) -> ^State {
             scale = 4,
             col = i == 0 ? rv.WHITE : rv.BLUE,
         )
-    }
-
-    if rv.key_pressed(.Escape) {
-        return nil
     }
 
     rv.bind_layer(1)

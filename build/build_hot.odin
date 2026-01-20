@@ -53,6 +53,7 @@ get_package_name_from_path :: proc() {
 
 compile_hot :: proc(pkg: string, pkg_name: string, index: int) {
     path := fmt.tprintf("%s%i" + DLL_EXT, pkg_name, index)
+    assert(!platform.file_exists(path))
     exec(fmt.tprintf("%s build %s -out:%s -debug -build-mode:dll", ODIN_EXE, pkg, path))
 }
 
@@ -121,7 +122,7 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
     initial, initial_ok := hotreload_find_latest_dll(pkg)
 
     if !initial_ok {
-        fmt.println("Hotreload Error: Couldn't find inital DLL for package:", pkg)
+        log.error("Hotreload Error: Couldn't find inital DLL for package:", pkg)
         return false
     }
 
@@ -130,7 +131,7 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
     module, module_ok := load_hotreload_module(initial.path)
 
     if !module_ok {
-        fmt.println("Hotreload Error: Failed to load initial DLL")
+        log.error("Hotreload Error: Failed to load initial DLL")
         return false
     }
 
@@ -147,6 +148,10 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
     any_changes := false
 
     for {
+        assert(module.callback != nil)
+        assert(module.api.init != nil)
+        assert(module.api.update != nil)
+
         prev_data = module.callback(prev_data, module.api)
 
         if prev_data == nil {
@@ -187,7 +192,7 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
                 continue
             }
 
-            fmt.printfln("Hotreload: Loaded %s", new_file.path)
+            log.info("Hotreload: Loaded %s", new_file.path)
 
             append(&modules_to_unload, new_module.mod)
 
@@ -202,20 +207,22 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
         platform.unload_module(lib)
     }
 
+    log.info("Hotreload: finished OK")
+
     return true
 }
 
 load_hotreload_module :: proc(path: string) -> (result: Hotreload_Module, ok: bool) {
     module, module_ok := platform.load_module(path)
     if !module_ok {
-        fmt.println("Hotreload: Failed to load library:", path)
+        log.info("Hotreload: Failed to load library:", path)
         return {}, false
     }
 
     get_module_api_proc := cast(Hotreload_Module_API_Proc)platform.module_symbol_address(module, "_module_api")
 
     if get_module_api_proc == nil {
-        fmt.println("Hotreload: Failed to find _module_api procedure")
+        log.info("Hotreload: Failed to find _module_api procedure")
         return {}, false
     }
 
@@ -224,9 +231,9 @@ load_hotreload_module :: proc(path: string) -> (result: Hotreload_Module, ok: bo
 
     result.callback = auto_cast(platform.module_symbol_address(module, "_module_hot_step"))
 
-    fmt.println("Hotreload API: ", result.api)
+    log.info("Hotreload API: ", result.api)
 
-    fmt.println("Hotreload callback: ", result.callback)
+    log.info("Hotreload callback: ", result.callback)
 
     if result.callback == nil {
         return {}, false

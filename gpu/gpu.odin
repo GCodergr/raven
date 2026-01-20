@@ -896,9 +896,6 @@ destroy_resource :: proc(handle: Resource_Handle) {
 //
 
 begin_pass :: proc(desc: Pass_Desc) {
-    if desc == _state.curr_pass_desc {
-        return
-    }
     validate_pass_desc(desc)
     _begin_pass(desc)
     _state.curr_pass_desc = desc
