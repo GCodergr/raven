@@ -25,11 +25,18 @@ Batteries-included toolkit for the entire code and asset pipeline.
 - Modular architecture
     -the `platform` or `gpu` packages can be used independently
 
+#### Fully Implemented
+
+#### In-progress
+
 ## Contributing
 For info about bug reports and contributing, see [CONTRIBUTING](CONTRIBUTING.md)
+
 
 # Docs
 
 TODO - minimal example,
+
+## Engine Structure
 
 ## Cheatsheet

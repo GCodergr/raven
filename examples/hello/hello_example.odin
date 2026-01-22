@@ -20,7 +20,7 @@ State :: struct {
 
 main :: proc() {
     fmt.println("Hello")
-    rv.run_module_loop(_module_api())
+    rv.run_main_loop(_module_api())
 }
 
 @export _module_api :: proc "contextless" () -> (result: rv.Module_API) {

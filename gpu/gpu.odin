@@ -576,7 +576,7 @@ create_pipeline :: proc(
         return result, true
     }
 
-    log.debug("Creating pipeline", hash)
+    log.debugf("Creating pipeline %x", hash)
 
     state: Pipeline_State
     state.native = _create_pipeline(name, desc) or_return
@@ -1040,7 +1040,7 @@ validate :: proc(cond: bool, msg: string = "", loc := #caller_location, expr := 
     // Based on 'base:builtin.assert'
     if !cond {
         @(cold)
-        internal :: proc(msg: string, expr: string, loc: runtime.Source_Code_Location) {
+        internal :: #force_no_inline proc(msg: string, expr: string, loc: runtime.Source_Code_Location) {
             p := context.assertion_failure_proc
             if p == nil {
                 p = runtime.default_assertion_failure_proc
@@ -1307,6 +1307,9 @@ _table_get :: proc(table: ^[$N]$T, table_gen: [N]Handle_Gen, handle: $H/Handle) 
 // MARK: Misc
 //
 
+_depth_enable :: proc(comp: Comparison_Op, write: bool) -> bool {
+    return comp != .Always || write
+}
 
 @(require_results)
 texture_format_is_depth_stencil :: proc(format: Texture_Format) -> bool {

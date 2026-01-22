@@ -1,30 +1,32 @@
 package raven_example_hello_minimal
 
-import "core:log"
 import "core:math"
 import rv "../.."
 
 main :: proc() {
-    context = rv.default_context()
-    context.logger = log.create_console_logger()
+    rv.init_state(context.allocator)
 
-    rv.init("Raven Hello Example")
-    defer rv.shutdown()
+    context = rv.get_context()
+
+    rv.init_window("Raven Hello Example")
+
+    defer rv.shutdown_state()
 
     for rv.begin_frame() {
+
+        if rv.key_pressed(.Escape) {
+            break
+        }
+
         rv.set_layer_params(0, rv.make_screen_camera())
 
-        rv.bind_texture("thin")
-        rv.bind_depth_test(false)
-        rv.bind_fill(.All)
+        rv.bind_texture("thick")
 
         rv.draw_text("Hello World!",
-            rv.get_viewport() * {0.5, 0.5, 0} + {0, math.sin_f32(rv.get_time()) * 100, 0},
+            rv.get_viewport() * {0.5, 0.5, 0} + {0, math.sin_f32(rv.get_time()) * 100, 0.01},
             anchor = 0.5,
             scale = 4,
         )
-
-        state.num += 1
 
         rv.upload_gpu_layers()
 
@@ -32,5 +34,7 @@ main :: proc() {
             clear_color = rv.Vec3{0, 0, 0.5},
             clear_depth = true,
         )
+
+        rv.end_frame()
     }
 }

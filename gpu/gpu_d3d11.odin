@@ -204,8 +204,10 @@ when BACKEND == BACKEND_D3D11 {
     _create_depth_stencil :: proc(comparison: Comparison_Op, write: bool) -> (result: _Depth_Stencil) {
         log.debug("GPU: Creating D3D11 depth stencil")
 
+        enable := true
+
         depth_stencil_desc := d3d.DEPTH_STENCIL_DESC{
-            DepthEnable         = true,
+            DepthEnable         = false, // d3d.BOOL(_depth_enable(comparison, write)),
             DepthWriteMask      = _d3d11_depth_write(write),
             DepthFunc           = _d3d11_comparison(comparison),
             StencilEnable       = false,
@@ -1091,7 +1093,7 @@ when BACKEND == BACKEND_D3D11 {
             _set_rasterizer(raster)
         }
 
-        if curr.depth_comparison != prev.depth_comparison || curr.depth_write != prev.depth_write {
+        if curr.depth_comparison != prev.depth_comparison || curr.depth_write != prev.depth_write || prev.depth_format == .Invalid {
             depth_stencil := &_state.depth_stencil_cache[curr.depth_comparison][curr.depth_write ? 1 : 0]
             if depth_stencil.dss == nil {
                 depth_stencil^ = _create_depth_stencil(curr.depth_comparison, curr.depth_write)

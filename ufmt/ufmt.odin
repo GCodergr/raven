@@ -180,3 +180,5 @@ _append_float :: proc(buf: ^[dynamic]byte, value: f64) {
     append_elem(buf, byte('0' + int(fp / 10 ) % 10))
     append_elem(buf, byte('0' + int(fp / 1  ) % 10))
 }
+
+// TODO: support very simple RTTI traversal

@@ -20,7 +20,12 @@ import "platform"
 import "rscn"
 import "audio"
 
-#assert(size_of(matrix[3, 3]f32) == (3 * 3 * size_of(f32)))
+// BEFORE RELEASE
+// TODO: Immediate-mode draw mesh
+// TODO: Immediate-mode draw triangle
+// TODO: Immediate-mode draw line
+// TODO: fix texture pools
+// TODO: actual 3d transform structure
 
 // TODO: go through all TODOs
 
@@ -29,16 +34,15 @@ import "audio"
 // TODO: consistent get_* and no get API!
 // TODO: VFS files and assets
 // TODO: multiple texture pools?
-// TODO: render tex binding
 // TODO: font state
 // TODO: audio
-// TODO: change layer draws
 // TODO: separate hash table size from backing array size
 // TODO: abstract log_error and log_warn etc to comptime disable logging?
 // TODO: mouse x rect functions and unify rects
 // TODO: resolve degrees/radians! USE ONLY ONE EVERYWHERE
 // TODO: compress vertex and instance data more
-// TODO: custom default context, with a custom default logger and a debug/trace assert proc
+// TODO: simple "profiling line" for CPU and GPU timing
+// TODO: More "summary" info when app exist - min/max/avg cpu/gpu frame time, num draws, ..?
 
 // ARTICLES
 // - blog post about two level bit sets
@@ -85,6 +89,7 @@ Vec4 :: [4]f32
 IVec2 :: [2]i32
 IVec3 :: [3]i32
 IVec4 :: [4]i32
+Mat2 :: matrix[2, 2]f32
 Mat3 :: matrix[3, 3]f32
 Mat4 :: matrix[4, 4]f32
 Quat :: quaternion128
@@ -172,6 +177,7 @@ State :: struct #align(64) {
 
     sprite_inst_buf:        gpu.Resource_Handle,
     mesh_inst_buf:          gpu.Resource_Handle,
+    triangle_vbuf:          gpu.Resource_Handle,
     quad_ibuf:              gpu.Resource_Handle,
 
     global_consts:          gpu.Resource_Handle,
@@ -274,6 +280,7 @@ Group :: struct {
 
 Object_Kind :: rscn.Object_Kind
 
+// TODO: objects in general are totally unfinished
 Object :: struct {
     kind:               Object_Kind,
 
@@ -297,11 +304,6 @@ Object :: struct {
     local_pos:          Vec3,
     local_rot:          Mat3,
     local_scale:        Vec3,
-
-    // // TODO
-    // world_pos:          Vec3,
-    // world_rot:          Mat3,
-    // world_scale:        Vec3,
 }
 
 Mesh :: struct {
@@ -331,7 +333,7 @@ Spline :: struct {
 }
 
 
-Mesh_Index :: u16 // GPU Vertex Index
+Vertex_Index :: u16 // GPU Vertex Index
 Spline_Vertex :: rscn.Spline_Vertex
 
 #assert(size_of(Mesh_Vertex) == 28)
@@ -339,7 +341,7 @@ Mesh_Vertex :: struct {
     pos:    [3]f32,
     uv:     [2]f32,
     normal: [3]u8 `gpu:"normalized"`,
-    p0:     u8,
+    p0:     u8, // NOTE: this padding could store user parameters..?
     color:  [3]u8 `gpu:"normalized"`,
     p1:     u8,
 }
@@ -394,6 +396,7 @@ Draw_Layer :: struct {
 
     last_sprites_len:   i32,
     last_meshes_len:    i32,
+    last_triangles_len: i32,
 
     // NOTE: the dynamic arrays must be allocated with temp_allocator.
     // Beware of the default append() behavior.
@@ -412,7 +415,7 @@ Draw_Layer_Flag :: enum u8 {
     No_Cull,
     // Disable all sorting.
     // NOTE: this doesn't affect just transparent objects, it's how batching optimization is done.
-    No_Sort,
+    No_Reorder,
 }
 
 // Shared across all layers and everything.
@@ -464,8 +467,9 @@ Mesh_Draw :: struct #all_or_none {
 
 Triangle_Draw :: struct #all_or_none {
     key:    Draw_Sort_Key,
-    offs:   u32,
+    verts:  [3]Mesh_Vertex,
 }
+
 
 // CPU Data for a single draw call.
 Draw_Batch :: struct #all_or_none {
@@ -488,7 +492,7 @@ Sprite_Inst :: struct #all_or_none #align(16) {
     tex_slice:  u8,
 }
 
-Mesh_Inst :: struct #all_or_none {
+Mesh_Inst :: struct #all_or_none #align(16) {
     pos:        Vec3,
     mat_x:      Vec3,
     mat_y:      Vec3,
@@ -585,7 +589,7 @@ Module_API :: struct #all_or_none {
 // Calling this does nothing when compiling as a DLL, it's the responsibility
 // of whoever loaded the DLL (e.g. hotreload runner) to call the app.
 // NOTE: Things like reload never get called in this mode.
-run_module_loop :: proc(api: Module_API) {
+run_main_loop :: proc(api: Module_API) {
     ensure(api.init != nil)
     ensure(api.update != nil)
 
@@ -637,7 +641,7 @@ run_module_loop :: proc(api: Module_API) {
             api.shutdown(_state.module_result)
         }
 
-        _shutdown_state()
+        shutdown_state()
 
     } else {
         panic("Cannot run module loop on this platform")
@@ -775,7 +779,7 @@ get_context :: proc "contextless" () -> (result: runtime.Context) {
 init_context_state :: proc(ctx: ^Context_State) {
     _state.context_state.logger = {
         file_handle = os.INVALID_HANDLE, // TODO nuke this bullshit
-	    ident = "",
+        ident = "",
     }
 
     mem.tracking_allocator_init(&_state.context_state.tracking, context.allocator, context.allocator)
@@ -835,8 +839,8 @@ _finish_init :: proc() {
     _state.screen_size = platform.get_window_frame_rect(_state.window).size
     _state.screen_dirty = true
 
-    // pool128_ok := create_texture_pool(128, 64)
-    // assert(pool128_ok)
+    pool128_ok := create_texture_pool(128, 64)
+    assert(pool128_ok)
 
     // Swapchain
     _state.render_textures_used += {int(DEFAULT_RENDER_TEXTURE.index)}
@@ -852,6 +856,13 @@ _finish_init :: proc() {
         size = size_of(Sprite_Inst) * 1024 * 32,
         usage = .Dynamic,
     ) or_else panic("gpu")
+
+    _state.triangle_vbuf = gpu.create_buffer("rv-triangle-vbuf",
+        stride = size_of(Mesh_Vertex),
+        size = size_of(Mesh_Vertex) * 3 * 1024 * 8,
+        usage = .Dynamic,
+    ) or_else panic("gpu")
+
 
     _state.mesh_inst_buf = gpu.create_buffer("rv-mesh-inst-buf",
         stride = size_of(Mesh_Inst),
@@ -941,7 +952,7 @@ _finish_init :: proc() {
     _state.initialized = true
 }
 
-_shutdown_state :: proc() {
+shutdown_state :: proc() {
     if _state == nil {
         return
     }
@@ -1166,8 +1177,12 @@ _clear_draw_layers :: proc() {
     for &layer in _state.draw_layers {
         layer.last_sprites_len = i32(len(layer.sprites))
         layer.last_meshes_len = i32(len(layer.meshes))
+        layer.last_triangles_len = i32(len(layer.triangles))
+
         layer.sprites = {}
         layer.meshes = {}
+        layer.triangles = {}
+
         layer.sprite_batches = {}
         layer.mesh_batches = {}
         layer.triangle_batches = {}
@@ -1620,22 +1635,6 @@ Input_Gamepad :: struct {
     buttons_timer:      [Gamepad_Button]f32,
 }
 
-// TODO: uniform input system
-// Input_Code :: union {
-//     Key,
-//     Mouse_Button,
-//     Gamepad_Button,
-// }
-
-// input_axis :: proc(code: Input_Code) -> f32 {
-
-// }
-
-// input_down :: proc(inp: Input_Code) -> bool {
-
-// }
-
-
 mouse_pos :: proc() -> [2]f32 {
     return _state.input.mouse_pos
 }
@@ -2087,7 +2086,7 @@ create_group :: proc(
     max_spline_verts:   i32 = 1024,
     max_total_children: i32 = 1024,
     vertex_data:        []Mesh_Vertex = {},
-    index_data:         []Mesh_Index = {},
+    index_data:         []Vertex_Index = {},
 ) -> (result: Group_Handle, ok: bool) #optional_ok {
     used_set := (transmute(u64)_state.groups_used) | 1
     index := intrinsics.count_trailing_zeros(~used_set)
@@ -2125,13 +2124,13 @@ create_group :: proc(
 
     if index_data != nil {
         group.ibuf, ok = gpu.create_index_buffer("rv-group-index-buf",
-            // size = size_of(Mesh_Index) * len(index_data),
+            // size = size_of(Vertex_Index) * len(index_data),
             data = gpu.slice_bytes(index_data),
             usage = .Immutable,
         )
     } else {
         group.ibuf, ok = gpu.create_index_buffer("rv-group-index-buf",
-            size = size_of(Mesh_Index) * max_mesh_indices,
+            size = size_of(Vertex_Index) * max_mesh_indices,
             usage = .Default,
         )
     }
@@ -2295,7 +2294,7 @@ create_texture_from_data :: proc(name: string, data: Texture_Data) -> (result: T
 
         assert(slice_index < 64)
 
-        log.infof("Creating pooled texture '%s' of size %ix%i", name, data.size.x, data.size.y)
+        log.infof("Creating a pooled texture '%s' of size %ix%i", name, data.size.x, data.size.y)
 
         create_resource = false
 
@@ -2318,7 +2317,7 @@ create_texture_from_data :: proc(name: string, data: Texture_Data) -> (result: T
     }
 
     if create_resource {
-        log.infof("Creating non-pooled texture '%s' of size %ix%i", name, data.size.x, data.size.y)
+        log.infof("Creating a non-pooled texture '%s' of size %ix%i", name, data.size.x, data.size.y)
 
         // Already exists, replace the old one.
         // Possibly a name hash collision.
@@ -2896,6 +2895,7 @@ Sprite_Scaling :: enum u8 {
     Absolute,
 }
 
+
 // TODO: anchor
 // TODO: angle
 // TODO: sprite_ex
@@ -2910,6 +2910,10 @@ draw_sprite :: proc(
     anchor: Vec2 = 0,
     angle:  f32 = 0,
 ) {
+    validate_vec(pos)
+    validate_vec(scale)
+    validate_quat(rot)
+
     UV_EPS :: (1.0 / 8192.0)
 
     if col.a < 0.01 || abs(scale.x * scale.y) < 0.0001 {
@@ -2919,11 +2923,11 @@ draw_sprite :: proc(
     mat := linalg.matrix3_from_quaternion_f32(rot *
         linalg.quaternion_angle_axis_f32(math.to_radians_f32(angle), {0, 0, 1}))
 
-    draw_layer := &_state.draw_layers[_state.bind_state.draw_layer]
-
     rect_size := rect_full_size(rect)
 
-    inst := Sprite_Inst{
+    draw: Sprite_Draw
+
+    draw.inst = Sprite_Inst{
         pos = pos,
         mat_x = mat[0] * scale.x * +0.5 * f32(_state.bind_state.texture_size.x) * rect_size.x,
         mat_y = mat[1] * scale.y * -0.5 * f32(_state.bind_state.texture_size.y) * rect_size.y,
@@ -2939,7 +2943,7 @@ draw_sprite :: proc(
         tex_slice = _state.bind_state.texture_slice,
     }
 
-    key := Draw_Sort_Key{
+    draw.key = Draw_Sort_Key{
         texture         = _state.bind_state.texture,
         texture_mode    = _state.bind_state.texture_mode,
         ps              = _state.bind_state.pixel_shader,
@@ -2953,20 +2957,7 @@ draw_sprite :: proc(
         dist            = 0,
     }
 
-    if len(draw_layer.sprites) == 0 {
-        draw_layer.sprites = make_soa_dynamic_array_len_cap(
-            #soa[dynamic]Sprite_Draw,
-            0,
-            max(256, draw_layer.last_sprites_len),
-            context.temp_allocator,
-        )
-    }
-
-    assert(draw_layer.sprites.allocator == context.temp_allocator)
-    append_soa_elem(&draw_layer.sprites, Sprite_Draw{
-        key = key,
-        inst = inst,
-    })
+    _push_sprite_draw(_state.bind_state.draw_layer, draw)
 }
 
 
@@ -3084,6 +3075,10 @@ draw_mesh_by_handle :: proc(
     col:        Vec4 = 1,
     param:      u32 = 0,
 ) {
+    validate_vec(pos)
+    validate_vec(scale)
+    validate_quat(rot)
+
     mesh, mesh_ok := get_internal_mesh(handle)
     if !mesh_ok {
         return
@@ -3103,6 +3098,14 @@ draw_mesh_by_handle :: proc(
         blend       = _state.bind_state.blend,
         depth_test  = _state.bind_state.depth_test,
         depth_write = _state.bind_state.depth_write,
+    }
+
+    if linalg.matrix3x3_determinant(mat) < 0 {
+        switch draw.key.fill {
+        case .All, .Wire: // no op
+        case .Front: draw.key.fill = .Back
+        case .Back: draw.key.fill = .Front
+        }
     }
 
     draw.inst = {
@@ -3126,26 +3129,121 @@ draw_mesh_by_handle :: proc(
         index = handle.index,
     }
 
+    _push_mesh_draw(_state.bind_state.draw_layer, draw)
+}
+
+draw_line :: proc(
+    a:          Vec3,
+    b:          Vec3,
+    width:      f32,
+    rect:       Rect = {0, 1},
+    col:        Vec4 = 1,
+) {
     draw_layer := &_state.draw_layers[_state.bind_state.draw_layer]
 
+    mid := (a + b) * 0.5
+    dir := linalg.normalize(b - a)
+    forw := linalg.normalize0( draw_layer.camera.pos)
+
+    unimplemented()
+
+    // draw_sprite(
+    //     pos = mid,
+    //     rect = rect,
+    //     scale = {width, linalg.length(a - b) * 0.5},
+    //     col = col,
+    //     rot =
+    // )
+}
+
+draw_triangle :: proc(
+    pos:        [3]Vec3,
+    uvs:        [3]Vec2 = {{0, 0}, {1, 0}, {0, 1}},
+    col:        [3]Vec3 = {{1, 1, 1}, {1, 1, 1}, {1, 1, 1}},
+    normals:    Maybe([3]Vec3) = nil,
+) {
+    validate_vec(pos[0])
+    validate_vec(pos[1])
+    validate_vec(pos[2])
+
+    draw: Triangle_Draw
+
+    draw.key = {
+        index_num   = 0,
+        group       = 0,
+        texture     = _state.bind_state.texture,
+        ps          = _state.bind_state.pixel_shader,
+        vs          = _state.bind_state.vertex_shader,
+        fill        = _state.bind_state.fill,
+        blend       = _state.bind_state.blend,
+        depth_test  = _state.bind_state.depth_test,
+        depth_write = _state.bind_state.depth_write,
+    }
+
+    norm, norm_ok := normals.?
+    if !norm_ok {
+        norm = linalg.normalize0(linalg.cross(pos[1] - pos[0], pos[2] - pos[0]))
+    }
+
+    for i in 0..<3 {
+        draw.verts[i] = {
+            pos     = pos[i],
+            uv      = uvs[i],
+            normal  = {
+                u8(clamp((norm[i].x * 0.5 + 0.5) * 255, 0, 255)),
+                u8(clamp((norm[i].y * 0.5 + 0.5) * 255, 0, 255)),
+                u8(clamp((norm[i].z * 0.5 + 0.5) * 255, 0, 255)),
+            },
+            p0      = 0,
+            color   = {
+                u8(clamp(col[i].r * 255, 0, 255)),
+                u8(clamp(col[i].g * 255, 0, 255)),
+                u8(clamp(col[i].b * 255, 0, 255)),
+            },
+            p1      = 0,
+        }
+    }
+
+    _push_triangle_draw(_state.bind_state.draw_layer, draw)
+}
+
+
+
+// TODO: multi push?
+
+_push_sprite_draw :: proc(#any_int layer_index: int, draw: Sprite_Draw) {
+    draw_layer := &_state.draw_layers[layer_index]
+
+    if len(draw_layer.sprites) == 0 {
+        draw_layer.sprites = make_soa_dynamic_array_len_cap(#soa[dynamic]Sprite_Draw, 0, max(256, draw_layer.last_sprites_len), context.temp_allocator)
+    }
+
+    assert(draw_layer.sprites.allocator == context.temp_allocator)
+    non_zero_append_soa_elem(&draw_layer.sprites, draw)
+}
+
+_push_mesh_draw :: proc(#any_int layer_index: int, draw: Mesh_Draw) {
+    draw_layer := &_state.draw_layers[layer_index]
+
     if len(draw_layer.meshes) == 0 {
-        draw_layer.meshes = make_soa_dynamic_array_len_cap(
-            #soa[dynamic]Mesh_Draw,
-            0,
-            max(256, draw_layer.last_meshes_len),
-            context.temp_allocator,
-        )
+        draw_layer.meshes = make_soa_dynamic_array_len_cap(#soa[dynamic]Mesh_Draw, 0, max(256, draw_layer.last_meshes_len), context.temp_allocator)
     }
 
     assert(draw_layer.meshes.allocator == context.temp_allocator)
-    append_soa_elem(&draw_layer.meshes, draw)
+    non_zero_append_soa_elem(&draw_layer.meshes, draw)
 }
 
-draw_line :: proc() {
+_push_triangle_draw :: proc(#any_int layer_index: int, draw: Triangle_Draw) {
+    draw_layer := &_state.draw_layers[layer_index]
 
+    if len(draw_layer.triangles) == 0 {
+        draw_layer.triangles = make_soa_dynamic_array_len_cap(#soa[dynamic]Triangle_Draw, 0, max(256, draw_layer.last_triangles_len), context.temp_allocator)
+    }
+
+    assert(draw_layer.triangles.allocator == context.temp_allocator)
+    non_zero_append_soa_elem(&draw_layer.triangles, draw)
 }
 
-draw_triangle :: proc() {}
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3209,13 +3307,11 @@ upload_gpu_layers :: proc() {
         }
 
         if .No_Cull not_in layer.flags {
-            MAX_SPRITE_DIST :: (1 << 14) - 1
-
             frustum := calc_camera_frustum(layer.camera)
 
             far_plane := frustum.planes[FRUSTUM_FAR_PLANE_INDEX]
 
-            sprite_dist_factor := f32(MAX_SPRITE_DIST) / far_plane.w
+            sprite_dist_factor := f32(MAX_DRAW_SORT_KEY_DIST) / far_plane.w
 
             forw := linalg.quaternion128_mul_vector3(layer.camera.rot, Vec3{0, 0, 1})
 
@@ -3240,7 +3336,7 @@ upload_gpu_layers :: proc() {
 
         instances := layer.sprites.inst[:len(layer.sprites)]
 
-        if .No_Sort not_in layer.flags {
+        if .No_Reorder not_in layer.flags {
             keys := layer.sprites.key[:len(layer.sprites)]
 
             #assert(size_of(u64) == size_of(Draw_Sort_Key))
@@ -3253,7 +3349,7 @@ upload_gpu_layers :: proc() {
 
     // GPU Upload sprites
 
-    sprite_upload_buf, sprite_upload_err := runtime.mem_alloc_non_zeroed(size_of(Sprite_Inst) * total_sprite_instances, alignment = 64, allocator = context.temp_allocator)
+    sprite_upload_buf, sprite_upload_err := runtime.mem_alloc_non_zeroed(size_of(Sprite_Inst) * total_sprite_instances, alignment = 256, allocator = context.temp_allocator)
     sprite_upload_offs := 0
 
     assert(sprite_upload_err == nil)
@@ -3282,32 +3378,112 @@ upload_gpu_layers :: proc() {
 
     gpu.update_buffer(_state.sprite_inst_buf, sprite_upload_buf)
 
-
-    instance_num: u32 = 0
-    instance_offs: u32 = 0
-
     // Generate sprite draw call lists
 
-    sprite_batch_consts: [MAX_TOTAL_DRAW_BATCHES]Draw_Batch_Constants
-    sprite_batch_consts_num := 0
+    Batcher_State :: struct {
+        consts:         [MAX_TOTAL_DRAW_BATCHES]Draw_Batch_Constants,
+        consts_num:     u32
+    }
+
+    batcher: Batcher_State
 
     for &layer, _ in _state.draw_layers {
-        if len(layer.sprites) == 0 {
+        _batcher_generate_draws(&batcher,
+            &layer.sprite_batches,
+            layer.sprites.key[:len(layer.sprites)],
+            layer.sprite_insts_base,
+        )
+    }
+
+
+
+    //
+    // Upload meshes
+    //
+
+    for &layer, _ in _state.draw_layers {
+        if len(layer.meshes) == 0 {
             continue
         }
 
-        assert(layer.sprite_batches == nil)
-        layer.sprite_batches = make([dynamic]Draw_Batch, 0, 256, context.temp_allocator)
+        if .No_Cull not_in layer.flags {
+            MAX_MESH_DIST :: (1 << 16) - 1
 
-        curr_key := layer.sprites[0].key
+            frustum := calc_camera_frustum(layer.camera)
+            far_plane := frustum.planes[FRUSTUM_FAR_PLANE_INDEX]
+            mesh_dist_factor := f32(MAX_MESH_DIST) / far_plane.w
+            forw := linalg.quaternion128_mul_vector3(layer.camera.rot, Vec3{0, 0, 1})
 
-        last := len(layer.sprites) - 1
+            for mesh_index := len(layer.meshes) - 1; mesh_index >= 0; mesh_index -= 1 {
+                inst := layer.meshes.inst[mesh_index]
+                key := &layer.meshes.key[mesh_index]
+                extra := layer.meshes.extra[mesh_index]
 
-        instance_num = 0
-        instance_offs = 0
+                mesh := _state.meshes[extra.index]
+
+                box_rad :=
+                    (linalg.abs(inst.mat_x) * max(abs(mesh.bounds_min.x), abs(mesh.bounds_max.x))) +
+                    (linalg.abs(inst.mat_y) * max(abs(mesh.bounds_min.y), abs(mesh.bounds_max.y))) +
+                    (linalg.abs(inst.mat_z) * max(abs(mesh.bounds_min.z), abs(mesh.bounds_max.z)))
+
+                dist := linalg.dot(forw, inst.pos - layer.camera.pos)
+                // NOTE: should this get inverted for opaque meshes to minimize overdraw?
+                // What about Z prepass?
+                key.dist = ~u16(dist * mesh_dist_factor) // invert
+
+                if !is_box_in_frustum(frustum, inst.pos, box_rad) {
+                    unordered_remove_soa(&layer.meshes, mesh_index)
+                }
+            }
+        }
+
+        instances := layer.meshes.inst[:len(layer.meshes)]
+
+        if .No_Reorder not_in layer.flags {
+            keys := layer.meshes.key[:len(layer.meshes)]
+            #assert(size_of(u64) == size_of(Draw_Sort_Key))
+            indices := slice.sort_with_indices(transmute([]u64)keys, context.temp_allocator)
+            slice.sort_from_permutation_indices(instances, indices)
+        }
+    }
+
+
+
+    //
+    // Upload meshes
+    //
+
+
+
+    gpu.update_constants(
+        _state.draw_batch_consts,
+        gpu.slice_bytes(batcher.consts[:batcher.consts_num]),
+    )
+
+    return
+
+    _batcher_generate_draws :: proc(
+        batcher:        ^Batcher_State,
+        dst_batches:    ^[dynamic]Draw_Batch,
+        keys:           []Draw_Sort_Key,
+        inst_offs_base: u32,
+    ) {
+        if len(keys) == 0 {
+            return
+        }
+
+        assert(dst_batches^ == nil)
+        dst_batches^ = make([dynamic]Draw_Batch, 0, 256, context.temp_allocator)
+
+        curr_key := keys[0]
+
+        last := len(keys) - 1
+
+        instance_num: u32 = 0
+        instance_offs: u32 = 0
 
         for i := 1; i <= last; i += 1 {
-            layer_key := layer.sprites.key[i]
+            layer_key := keys[i]
 
             instance_num += 1
 
@@ -3315,105 +3491,29 @@ upload_gpu_layers :: proc() {
                 continue
             }
 
-            append(&layer.sprite_batches, Draw_Batch{
+            append(dst_batches, Draw_Batch{
                 key = curr_key,
-                offset = u32(sprite_batch_consts_num),
+                offset = u32(batcher.consts_num),
                 num = int_cast(u16, instance_num),
             })
 
-            sprite_batch_consts[sprite_batch_consts_num] = {
+            batcher.consts[batcher.consts_num] = {
                 vertex_offset = 0,
-                instance_offset = layer.sprite_insts_base + instance_offs,
+                instance_offset = inst_offs_base + instance_offs,
             }
-            sprite_batch_consts_num += 1
+            batcher.consts_num += 1
 
             curr_key = layer_key
             instance_offs += instance_num
             instance_num = 0
         }
     }
-
-    gpu.update_constants(
-        _state.draw_batch_consts,
-        gpu.slice_bytes(sprite_batch_consts[:sprite_batch_consts_num]),
-    )
-
-    // Update draw call constant buffers
-
-
-    //
-    // Upload meshes
-    //
-
-    // vram_mesh_buf := slice.reinterpret([]Mesh_Inst, gpu.map_buffer(_state.mesh_inst_buf))
-    // vram_mesh_offs := 0
-
-    // assert(len(vram_mesh_buf) > 0)
-
-    // for &layer, _ in _state.draw_layers {
-    //     if len(layer.meshes) == 0 {
-    //         continue
-    //     }
-
-    //     assert(vram_mesh_offs < len(vram_mesh_buf))
-
-    //     if .No_Cull not_in layer.flags {
-    //         MAX_MESH_DIST :: (1 << 16) - 1
-
-    //         frustum := calc_camera_frustum(layer.camera)
-    //         far_plane := frustum.planes[FRUSTUM_FAR_PLANE_INDEX]
-    //         mesh_dist_factor := f32(MAX_MESH_DIST) / far_plane.w
-    //         forw := linalg.quaternion128_mul_vector3(layer.camera.rot, Vec3{0, 0, 1})
-
-    //         for mesh_index := len(layer.meshes) - 1; mesh_index >= 0; mesh_index -= 1 {
-    //             inst := layer.meshes.inst[mesh_index]
-    //             key := &layer.meshes.key[mesh_index]
-    //             extra := layer.meshes.extra[mesh_index]
-
-    //             mesh := _state.meshes[extra.index]
-
-    //             box_rad :=
-    //                 (linalg.abs(inst.mat_x) * max(abs(mesh.bounds_min.x), abs(mesh.bounds_max.x))) +
-    //                 (linalg.abs(inst.mat_y) * max(abs(mesh.bounds_min.y), abs(mesh.bounds_max.y))) +
-    //                 (linalg.abs(inst.mat_z) * max(abs(mesh.bounds_min.z), abs(mesh.bounds_max.z)))
-
-    //             dist := linalg.dot(forw, inst.pos - layer.camera.pos)
-    //             // NOTE: should this get inverted for opaque meshes to minimize overdraw?
-    //             // What about Z prepass?
-    //             key.dist = ~u16(dist * mesh_dist_factor) // invert
-
-    //             if !is_box_in_frustum(frustum, inst.pos, box_rad) {
-    //                 unordered_remove_soa(&layer.meshes, mesh_index)
-    //             }
-    //         }
-    //     }
-
-    //     instances := layer.meshes.inst[:len(layer.meshes)]
-
-    //     if .No_Sort not_in layer.flags {
-    //         keys := layer.meshes.key[:len(layer.meshes)]
-    //         #assert(size_of(u64) == size_of(Mesh_Sort_Key))
-    //         indices := slice.sort_with_indices(transmute([]u64)keys, context.temp_allocator)
-    //         slice.sort_from_permutation_indices(instances, indices)
-    //     }
-
-    //     num := copy_slice(vram_mesh_buf[vram_mesh_offs:], instances)
-
-    //     if num != len(instances) {
-    //         log.error("Failed to upload all mesh instances")
-    //         footer := raw_soa_footer_dynamic_array(&layer.meshes)
-    //         footer.len = num
-    //     } else {
-    //         layer.mesh_offs = u32(vram_mesh_offs)
-    //         vram_mesh_offs += num
-    //     }
-    // }
-
-    // gpu.unmap_buffer(_state.mesh_inst_buf)
 }
 
 
 
+// NOTE: the instance bind data only use a few of the available sots (consts/resources/blends/etc)
+// We could possibly expose a direct way for the user to control this on per-layer basis.
 @(optimization_mode="favor_size")
 render_gpu_layer :: proc(
     #any_int index: i32,
@@ -3465,6 +3565,7 @@ render_gpu_layer :: proc(
             0 = .RGBA_U8_Norm,
         },
         depth_format = .D_F32,
+        topo = .Triangles,
         constants = {
             0 = _state.global_consts,
             1 = _state.draw_layers_consts,
@@ -3486,8 +3587,6 @@ render_gpu_layer :: proc(
         format = .U16,
     }
 
-    pip_desc.topo = .Triangles
-
     pip_desc.resources = {
         0 = _state.sprite_inst_buf,
     }
@@ -3495,22 +3594,7 @@ render_gpu_layer :: proc(
     for batch in layer.sprite_batches {
         // log_internal("Sprite batch drawcall with %i instances", batch.num)
 
-        pip_desc.blends[0] = _gpu_blend_mode_desc(batch.key.blend)
-        pip_desc.cull, pip_desc.fill = _gpu_fill_mode(batch.key.fill)
-        pip_desc.depth_comparison = batch.key.depth_test ? .Greater_Equal : .Always
-        pip_desc.depth_write = batch.key.depth_write
-        pip_desc.ps = _state.pixel_shaders[batch.key.ps].shader
-        pip_desc.vs = _state.vertex_shaders[batch.key.vs].shader
-
-        tex_res: gpu.Resource_Handle
-        switch batch.key.texture_mode {
-        case .Non_Pooled:       tex_res = _state.textures[batch.key.texture].resource
-        case .Pooled:           tex_res = _state.texture_pools[batch.key.texture].resource
-        case .Render_Texture:   tex_res = _state.render_textures[batch.key.texture].color
-        }
-
-        assert(tex_res != {})
-        pip_desc.resources[2] = tex_res
+        _set_pipeline_desc_apply_key(&pip_desc, batch.key)
 
         pipeline, pipeline_ok := gpu.create_pipeline("sprite-pip", pip_desc)
         if !pipeline_ok {
@@ -3533,229 +3617,103 @@ render_gpu_layer :: proc(
     }
 
 
-    // instance_num: i32 = 0
-    // instance_offs: i32 = 0
-
-    // if len(layer.sprites) > 0 {
-
-    //     pip_desc.index = {
-    //         resource = _state.quad_ibuf,
-    //         format = .U16,
-    //     }
-
-    //     pip_desc.topo = .Triangles
-
-    //     pip_desc.cull = .None
-    //     pip_desc.fill = .Invalid
-
-    //     pip_desc.vs = _state.vertex_shaders[_state.default_sprite_vs.index].shader
-
-    //     pip_desc.resources = {
-    //         0 = _state.sprite_inst_buf,
-    //     }
-
-    //     prev_key: Draw_Sort_Key = {}
-
-    //     for i in 0..=len(layer.sprites) {
-    //         flush: bool
-    //         key: Draw_Sort_Key
-
-    //         // End
-    //         if i == len(layer.sprites) {
-    //             flush = true
-    //             key = prev_key
-    //         } else {
-    //             key = layer.sprites.key[i]
-
-    //             cmp_curr := key
-    //             cmp_prev := prev_key
-    //             cmp_curr.dist = 0
-    //             cmp_prev.dist = 0
-
-    //             flush = i > 0 && cmp_curr != cmp_prev
-    //         }
-
-    //         // Flush the draw commands BEFORE this one
-    //         if flush {
-    //             log_internal("Sprite Drawcall with %i instances at offset %i", instance_num, instance_offs)
-
-    //             pipeline, pipeline_ok := gpu.create_pipeline("sprite-pip", pip_desc)
-    //             if !pipeline_ok {
-    //                 panic("Failed to create GPU pipeline")
-    //             }
-
-    //             gpu.begin_pipeline(pipeline)
-
-    //             // consts := Draw_Batch_Constants{
-    //             //     instance_offset = layer.sprite_batch_base + u32(instance_offs),
-    //             //     vertex_offset = 0,
-    //             // }
-
-    //             // // THIS SHIT WONT WORK ON WEBGPU
-    //             // // Emulate push constants??
-    //             // gpu.update_constants(_state.draw_batch_consts, gpu.ptr_bytes(&consts))
-
-    //             gpu.draw_indexed(
-    //                 index_num = 6,
-    //                 instance_num = instance_num,
-    //                 index_offset = 0,
-    //                 const_offsets = {
-    //                     0 = 0,
-    //                     1 = u32(index),
-    //                 },
-    //             )
-
-    //             instance_offs += instance_num
-    //             instance_num = 0
-    //         }
-
-    //         if i == len(layer.sprites) {
-    //             break
-    //         }
-
-    //         instance_num += 1
-
-    //         if i == 0 || flush {
-    //             pip_desc.blends[0] = _gpu_blend_mode_desc(key.blend)
-    //             pip_desc.cull, pip_desc.fill = _gpu_fill_mode(key.fill)
-    //             pip_desc.depth_comparison = key.depth_test ? .Greater_Equal : .Always
-    //             pip_desc.depth_write = key.depth_write
-
-    //             if key.texture != prev_key.texture {
-    //                 res: gpu.Resource_Handle
-
-    //                 if key.texture == 0 {
-    //                     // res = _state.texture_pool.resource
-    //                 } else {
-    //                     res = _state.textures[key.texture].resource
-    //                 }
-
-    //                 pip_desc.resources[2] = res
-    //             }
-
-    //             if key.ps != prev_key.ps {
-    //                 assert(key.ps != 0)
-    //                 pip_desc.ps = _state.pixel_shaders[key.ps].shader
-    //             }
-    //         }
-
-    //         prev_key = key
-    //     }
-    // }
-
-
     //
     // Meshes
     //
 
-    // instance_num = 0
-    // instance_offs = 0
+    pip_desc.index = {
+        resource = {},
+        format = .U16,
+    }
 
-    // if len(layer.meshes) > 0 {
-    //     gpu.set_resource(0, _state.mesh_inst_buf)
+    pip_desc.resources = {
+        0 = _state.mesh_inst_buf,
+    }
 
-    //     prev_key: Mesh_Sort_Key = {}
+    for batch in layer.mesh_batches {
+        _set_pipeline_desc_apply_key(&pip_desc, batch.key)
 
-    //     for i in 0..=len(layer.meshes) {
-    //         flush: bool
-    //         key: Mesh_Sort_Key
+        pip_desc.index.resource = _state.groups[batch.key.group].ibuf
+        pip_desc.resources[1] = _state.groups[batch.key.group].vbuf
 
-    //         // End
-    //         if i == len(layer.meshes) {
-    //             flush = true
-    //             key = prev_key
-    //         } else {
-    //             key = layer.meshes.key[i]
-    //             flush =
-    //                 i > 0 && (
-    //                 key.blend != prev_key.blend ||
-    //                 key.fill != prev_key.fill ||
-    //                 key.index_num != prev_key.index_num ||
-    //                 key.depth_test != prev_key.depth_test ||
-    //                 key.depth_write != prev_key.depth_write ||
-    //                 key.group != prev_key.group ||
-    //                 key.texture != prev_key.texture ||
-    //                 key.ps != prev_key.ps ||
-    //                 key.vs != prev_key.vs
-    //             )
-    //         }
+        pipeline, pipeline_ok := gpu.create_pipeline("mesh-pip", pip_desc)
+        if !pipeline_ok {
+            log.error("Failed to create GPU pipeline")
+            continue
+        }
 
-    //         // Flush the draw commands BEFORE this one
-    //         if flush {
-    //             // log.infof("Mesh Drawcall with %i indices and %i instances at offset %i", key.index_num, instance_num, instance_offs)
+        gpu.begin_pipeline(pipeline)
 
-    //             consts := Draw_Batch_Constants{
-    //                 instance_offset = layer.mesh_offs + u32(instance_offs),
-    //                 vertex_offset = 0,
-    //             }
+        gpu.draw_indexed(
+            index_num = 6,
+            instance_num = batch.num,
+            index_offset = 0,
+            const_offsets = {
+                0 = max(u32),
+                1 = u32(index),
+                2 = batch.offset,
+            },
+        )
+    }
 
-    //             gpu.update_constants(_state.draw_batch_consts, gpu.ptr_bytes(&consts))
+    //
+    // Triangles
+    //
 
-    //             gpu.draw_indexed(
-    //                 index_num = key.index_num,
-    //                 instance_num = instance_num,
-    //                 index_offset = 0,
-    //             )
+    pip_desc.index = {
+        resource = {},
+        format = .U16,
+    }
 
-    //             instance_offs = i32(i)
-    //             instance_num = 0
-    //         }
+    pip_desc.index = {}
+    pip_desc.resources = {
+        0 = _state.triangle_vbuf,
+    }
 
-    //         if i == len(layer.meshes) {
-    //             break
-    //         }
+    for batch in layer.mesh_batches {
+        _set_pipeline_desc_apply_key(&pip_desc, batch.key)
 
-    //         instance_num += 1
+        pipeline, pipeline_ok := gpu.create_pipeline("tri-pip", pip_desc)
+        if !pipeline_ok {
+            log.error("Failed to create GPU pipeline")
+            continue
+        }
 
-    //         if i == 0 || key.blend != prev_key.blend {
-    //             _set_gpu_blend_mode(key.blend)
-    //         }
+        gpu.begin_pipeline(pipeline)
 
-    //         if i == 0 || key.fill != prev_key.fill {
-    //             _set_gpu_fill_mode(key.fill)
-    //         }
+        gpu.draw_indexed(
+            index_num = 6,
+            instance_num = batch.num,
+            index_offset = 0,
+            const_offsets = {
+                0 = max(u32),
+                1 = u32(index),
+                2 = batch.offset,
+            },
+        )
+    }
 
-    //         if i == 0 || key.depth_test != prev_key.depth_test || key.depth_write != prev_key.depth_write {
-    //             gpu.set_depth_comparison(key.depth_test ? .Greater_Equal : .Always)
-    //             gpu.set_depth_write(key.depth_write)
-    //         }
 
-    //         if i == 0 || key.group != prev_key.group {
-    //             assert(key.group != 0)
-    //             group := &_state.groups[key.group]
-    //             assert(group.ibuf != {})
-    //             assert(group.vbuf != {})
-    //             gpu.set_index_buffer(group.ibuf, .U16)
-    //             gpu.set_resource(1, group.vbuf)
-    //         }
+    return
 
-    //         if i == 0 || key.texture != prev_key.texture {
-    //             res: gpu.Resource_Handle
-    //             if key.texture == 0 {
-    //                 // res = _state.texture_pool.resource
-    //                 // assert(res != {})
-    //             } else {
-    //                 res = _state.textures[key.texture].resource
-    //                 assert(res != {})
-    //             }
-    //             gpu.set_resource(0, res)
-    //         }
+    _set_pipeline_desc_apply_key :: proc(pip_desc: ^gpu.Pipeline_Desc, key: Draw_Sort_Key) {
+        pip_desc.blends[0] = _gpu_blend_mode_desc(key.blend)
+        pip_desc.cull, pip_desc.fill = _gpu_fill_mode(key.fill)
+        pip_desc.depth_comparison = key.depth_test ? .Greater_Equal : .Always
+        pip_desc.depth_write = key.depth_write
+        pip_desc.ps = _state.pixel_shaders[key.ps].shader
+        pip_desc.vs = _state.vertex_shaders[key.vs].shader
 
-    //         if i == 0 || key.ps != prev_key.ps {
-    //             assert(key.ps != 0)
-    //             ps := _state.pixel_shaders[key.ps]
-    //             gpu.set_shader(ps.shader)
-    //         }
+        tex_res: gpu.Resource_Handle
+        switch key.texture_mode {
+        case .Non_Pooled:       tex_res = _state.textures[key.texture].resource
+        case .Pooled:           tex_res = _state.texture_pools[key.texture].resource
+        case .Render_Texture:   tex_res = _state.render_textures[key.texture].color
+        }
 
-    //         if i == 0 || key.vs != prev_key.vs {
-    //             assert(key.vs != 0)
-    //             vs := _state.vertex_shaders[key.vs]
-    //             gpu.set_shader(vs.shader)
-    //         }
-
-    //         prev_key = key
-    //     }
-    // }
+        assert(tex_res != {})
+        pip_desc.resources[2] = tex_res
+    }
 }
 
 
@@ -3987,11 +3945,11 @@ screen_to_world_ray :: proc(pos: Vec2, cam: Camera) -> Vec3 {
 
 @(optimization_mode="favor_size")
 hash_fnv64a :: proc "contextless" (data: []byte, seed: u64) -> u64 {
-	h: u64 = seed
-	for b in data {
-		h = (h ~ u64(b)) * 0x100000001b3
-	}
-	return h
+    h: u64 = seed
+    for b in data {
+        h = (h ~ u64(b)) * 0x100000001b3
+    }
+    return h
 }
 
 @(disabled=!LOG_INTERNAL)
@@ -4140,6 +4098,77 @@ rect_split_top :: proc(r: ^Rect, t: f32) -> Rect {
 
 rect_split_bottom :: proc(r: ^Rect, t: f32) -> Rect {
     return rect_cut_bottom(r, (r.max.y - r.min.y) * t)
+}
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// MARK: Validation
+//
+// Ensures the data user passed in is in somewhat reasonable state.
+//
+
+@(disabled = !VALIDATION)
+validate_f32 :: #force_inline proc(x: f32, loc := #caller_location) {
+    validate(x == x && (x * 0.5 != x || x == 0), "Value is NaN or Inf")
+}
+
+@(disabled=!VALIDATION)
+validate :: proc(cond: bool, msg := #caller_expression(cond), loc := #caller_location) {
+    if !cond {
+        // NOTE(bill): This is wrapped in a procedure call
+        // to improve performance to make the CPU not
+        // execute speculatively, making it about an order of
+        // magnitude faster
+        @(cold)
+        internal :: #force_no_inline proc(msg: string, loc: runtime.Source_Code_Location) {
+            p := context.assertion_failure_proc
+            if p == nil {
+                p = runtime.default_assertion_failure_proc
+            }
+
+            p("Raven: Validation Failed", message = msg, loc = loc)
+        }
+        internal(msg, loc)
+    }
+}
+
+
+@(disabled = !VALIDATION)
+validate_vec :: proc(v: [$N]f32, loc := #caller_location) {
+    for x in v {
+        validate_f32(x, loc)
+    }
+}
+
+@(disabled = !VALIDATION)
+validate_quat :: proc(q: quaternion128, loc := #caller_location) {
+    validate_f32(q.x, loc)
+    validate_f32(q.y, loc)
+    validate_f32(q.z, loc)
+    validate_f32(q.w, loc)
+}
+
+
+@(disabled = !VALIDATION)
+validate_mat2 :: proc(m: Mat2, loc := #caller_location) {
+    validate_vec(m[0], loc)
+    validate_vec(m[1], loc)
+}
+
+@(disabled = !VALIDATION)
+validate_mat3 :: proc(m: Mat3, loc := #caller_location) {
+    validate_vec(m[0], loc)
+    validate_vec(m[1], loc)
+    validate_vec(m[2], loc)
+}
+
+@(disabled = !VALIDATION)
+validate_mat4 :: proc(m: Mat4, loc := #caller_location) {
+    validate_vec(m[0], loc)
+    validate_vec(m[1], loc)
+    validate_vec(m[2], loc)
+    validate_vec(m[3], loc)
 }
 
 

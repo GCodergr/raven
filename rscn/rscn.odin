@@ -48,7 +48,7 @@ Header :: struct {
 }
 
 Object_Index :: int
-Mesh_Index :: int
+Vertex_Index :: int
 Image_Index :: int
 Spline_Index :: int
 
@@ -58,7 +58,7 @@ Image :: struct {
 
 Object :: struct {
     kind:           Object_Kind,
-    mesh_index:     Mesh_Index,
+    mesh_index:     Vertex_Index,
     spline_index:    Spline_Index,
     name:           string, // valid as long as the file data is valid
     parent:         Object_Index,

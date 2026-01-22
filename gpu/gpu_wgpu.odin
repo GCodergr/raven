@@ -539,7 +539,7 @@ when BACKEND == BACKEND_WGPU {
 
         depth_stencil: ^wgpu.DepthStencilState
 
-        if desc.depth_format != .Invalid {
+        if desc.depth_format != .Invalid && _depth_enable(desc.depth_comparison, desc.depth_write) {
             depth_stencil = &wgpu.DepthStencilState{
                 format = _wgpu_texture_format(desc.depth_format),
                 depthWriteEnabled = desc.depth_write ? .True : .False,
