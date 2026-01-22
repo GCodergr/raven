@@ -26,14 +26,10 @@ Batteries-included toolkit for the entire code and asset pipeline.
     -the `platform` or `gpu` packages can be used independently
 
 ## Contributing
-PRs, especially bug fixes are very welcome!
-
-I will try to review everything when I can.
-
-For bigger PRs or any kind of new features, prefer
+For info about bug reports and contributing, see [CONTRIBUTING](CONTRIBUTING.md)
 
 # Docs
 
 TODO - minimal example,
 
-# Cheatsheet
+## Cheatsheet
