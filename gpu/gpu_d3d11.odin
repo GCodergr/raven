@@ -103,7 +103,8 @@ when BACKEND == BACKEND_D3D11 {
             .SINGLETHREADED,
             .BGRA_SUPPORT,
         }
-        if DEBUG {
+
+        if !RELEASE {
             device_flags += {.DEBUG}
         }
 
@@ -137,14 +138,8 @@ when BACKEND == BACKEND_D3D11 {
         // TODO: investigate more
         _d3d11_check(dxgi_device->SetMaximumFrameLatency(1)) or_return
 
-        if DEBUG {
+        if !RELEASE {
             _d3d11_check(_state.device->QueryInterface(d3d.IInfoQueue_UUID, cast(^rawptr)&_state.info_queue)) or_return
-
-            // if VALIDATION_STRICT {
-            //     _d3d11_check(_state.info_queue->SetBreakOnSeverity(.WARNING, true))
-            // }
-            // _d3d11_check(_state.info_queue->SetBreakOnSeverity(.ERROR, true))
-            // _d3d11_check(_state.info_queue->SetBreakOnSeverity(.CORRUPTION, true))
         }
 
         _d3d11_messages()
@@ -385,7 +380,12 @@ when BACKEND == BACKEND_D3D11 {
         }
 
         flags: d3d_compiler.D3DCOMPILE
-        if DEBUG {
+        if RELEASE {
+            flags = {
+                .PACK_MATRIX_COLUMN_MAJOR,
+                .OPTIMIZATION_LEVEL3,
+            }
+        } else {
             flags = {
                 .DEBUG,
                 .SKIP_OPTIMIZATION,
@@ -393,11 +393,6 @@ when BACKEND == BACKEND_D3D11 {
                 .ENABLE_STRICTNESS,
                 .WARNINGS_ARE_ERRORS,
                 .ALL_RESOURCES_BOUND,
-            }
-        } else {
-            flags = {
-                .PACK_MATRIX_COLUMN_MAJOR,
-                .OPTIMIZATION_LEVEL3,
             }
         }
 
@@ -1346,42 +1341,43 @@ when BACKEND == BACKEND_D3D11 {
         case 0:
             return true
         case 1:
-            log.errorf("S_FALSE: Successful but nonstandard completion (the precise meaning depends on context).", location = loc)
+            log.warnf("GPU D3D11: S_FALSE: Successful but nonstandard completion (the precise meaning depends on context).", location = loc)
             return true
 
         case 0x887C0002:
-            log.errorf("D3D11_ERROR_FILE_NOT_FOUND: The file was not found.", location = loc)
+            log.errorf("GPU D3D11: D3D11_ERROR_FILE_NOT_FOUND: The file was not found.", location = loc)
         case 0x887C0001:
-            log.errorf("D3D11_ERROR_TOO_MANY_UNIQUE_STATE_OBJECTS: There are too many unique instances of a particular type of state object.", location = loc)
+            log.errorf("GPU D3D11: D3D11_ERROR_TOO_MANY_UNIQUE_STATE_OBJECTS: There are too many unique instances of a particular type of state object.", location = loc)
         case 0x887C0003:
-            log.errorf("D3D11_ERROR_TOO_MANY_UNIQUE_VIEW_OBJECTS: There are too many unique instances of a particular type of view object.", location = loc)
+            log.errorf("GPU D3D11: D3D11_ERROR_TOO_MANY_UNIQUE_VIEW_OBJECTS: There are too many unique instances of a particular type of view object.", location = loc)
         case 0x887C0004:
-            log.errorf("D3D11_ERROR_DEFERRED_CONTEXT_MAP_WITHOUT_INITIAL_DISCARD: The first call to ID3D11DeviceContext::Map after either ID3D11Device::CreateDeferredContext or ID3D11DeviceContext::FinishCommandList per Resource was not D3D11_MAP_WRITE_DISCARD.", location = loc)
+            log.errorf("GPU D3D11: D3D11_ERROR_DEFERRED_CONTEXT_MAP_WITHOUT_INITIAL_DISCARD: The first call to ID3D11DeviceContext::Map after either ID3D11Device::CreateDeferredContext or ID3D11DeviceContext::FinishCommandList per Resource was not D3D11_MAP_WRITE_DISCARD.", location = loc)
         case 0x887A0001:
-            log.errorf("DXGI_ERROR_INVALID_CALL: The method call is invalid. For example, a method's parameter may not be a valid pointer.", location = loc)
+            log.errorf("GPU D3D11: DXGI_ERROR_INVALID_CALL: The method call is invalid. For example, a method's parameter may not be a valid pointer.", location = loc)
         case 0x887A000A:
-            log.errorf("DXGI_ERROR_WAS_STILL_DRAWING: The previous blit operation that is transferring information to or from this surface is incomplete.", location = loc)
+            log.errorf("GPU D3D11: DXGI_ERROR_WAS_STILL_DRAWING: The previous blit operation that is transferring information to or from this surface is incomplete.", location = loc)
         case 0x80004005:
-            log.errorf("E_FAIL: Attempted to create a device with the debug layer enabled and the layer is not installed.", location = loc)
+            log.errorf("GPU D3D11: E_FAIL: Attempted to create a device with the debug layer enabled and the layer is not installed.", location = loc)
         case 0x80070057:
-            log.errorf("E_INVALIDARG: An invalid parameter was passed to the returning function.", location = loc)
+            log.errorf("GPU D3D11: E_INVALIDARG: An invalid parameter was passed to the returning function.", location = loc)
         case 0x8007000E:
-            log.errorf("E_OUTOFMEMORY: Direct3D could not allocate sufficient memory to complete the call.", location = loc)
+            log.errorf("GPU D3D11: E_OUTOFMEMORY: Direct3D could not allocate sufficient memory to complete the call.", location = loc)
         case 0x80004001:
-            log.errorf("E_NOTIMPL: The method call isn't implemented with the passed parameter combination.", location = loc)
+            log.errorf("GPU D3D11: E_NOTIMPL: The method call isn't implemented with the passed parameter combination.", location = loc)
         }
 
         _d3d11_messages()
 
-        if VALIDATION_STRICT {
-            panic("D3D11 strict validation failed", loc = loc)
+        if VALIDATION {
+            panic("GPU D3D11: Error Result", loc = loc)
         }
 
         return false
     }
 
+    @(disabled = RELEASE)
     _d3d11_messages :: proc(loc := #caller_location) {
-        when DEBUG {
+        when !RELEASE {
             defer _state.info_queue->ClearStoredMessages()
 
             buf: [1024]u8
@@ -1403,14 +1399,14 @@ when BACKEND == BACKEND_D3D11 {
 	            case .MESSAGE: level = .Debug
                 }
 
-                log.logf(level, "D3D11 %s: %s", msg.Category, msg.pDescription, location = loc)
+                log.logf(level, "GPU D3D11 %s: %s", msg.Category, msg.pDescription, location = loc)
 
                 if msg.Severity == .CORRUPTION || msg.Severity == .ERROR {
-                    panic("D3D11 Error")
+                    panic("GPU D3D11: Error")
                 }
 
-                if VALIDATION_STRICT && msg.Severity == .WARNING {
-                    panic("D3D11 Warning")
+                if VALIDATION && msg.Severity == .WARNING {
+                    panic("GPU D3D11: Warning")
                 }
             }
         }

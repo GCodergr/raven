@@ -10,28 +10,6 @@ WASM_PAGE_SIZE :: 65536
 DEFAULT_INITIAL_MEM_PAGES :: 2000
 DEFAULT_MAX_MEM_PAGES :: 65536
 
-/*
-REM NOTE: changing this requires changing the same values in the `web/index.html`.
-echo off
-del triangle.wasm
-
-set INITIAL_MEMORY_PAGES=2000
-set MAX_MEMORY_PAGES=65536
-
-set PAGE_SIZE=65536
-set /a INITIAL_MEMORY_BYTES=%INITIAL_MEMORY_PAGES% * %PAGE_SIZE%
-set /a MAX_MEMORY_BYTES=%MAX_MEMORY_PAGES% * %PAGE_SIZE%
-
-@REM set ODIN_ROOT="D:\Odin\"
-
-
-call odin.exe build . -target:js_wasm32 -debug -out:web/triangle.wasm -o:size -extra-linker-flags:"--export-table --import-memory --initial-memory=%INITIAL_MEMORY_BYTES% --max-memory=%MAX_MEMORY_BYTES%"
-
-@REM for /f "delims=" %%i in ('odin.exe root') do set "ODIN_ROOT=%%i"
-copy "D:\Odin\vendor\wgpu\wgpu.js" "web\wgpu.js"
-copy "D:\Odin\core\sys\wasm\js\odin.js" "web\odin.js"
-*/
-
 export_web :: proc(dst_dir: string, pkg_name: string, pkg_path: string) {
     remove_all(strings.concatenate({dst_dir, platform.SEPARATOR, "*"}))
     platform.create_directory(dst_dir)
@@ -82,7 +60,8 @@ clone_file :: proc(dst, src: string) {
 }
 
 compile_web :: proc(dst_dir: string, pkg_name: string, pkg_path: string, initial_mem_pages: int, max_mem_pages: int) -> bool {
-    OPT_FLAGS :: "-o:size -debug "
+    // NOTE: size optimizations are probably not worth the time when compiling debug builds.
+    OPT_FLAGS :: "-debug " // "-o:size "
 
     FORMAT :: "%s build %s -target:js_wasm32 -out:%s/%s.wasm " +
         OPT_FLAGS +

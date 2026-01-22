@@ -11,15 +11,15 @@ import "core:log"
 // TODO: the non-backend-specific code should use #caller_location for validation
 // TODO: compress pipelines
 
+_RAVEN_RELEASE :: #config(RAVEN_RELEASE, false)
+RELEASE :: #config(GPU_RELEASE, _RAVEN_RELEASE)
+VALIDATION :: #config(GPU_VALIDATION, !RELEASE)
+
 BACKEND :: #config(GPU_BACKEND, DEFAULT_BACKEND)
 
 BACKEND_D3D11 :: "D3D11"
 BACKEND_WGPU :: "WGPU"
 BACKEND_DUMMY :: "Dummy"
-
-DEBUG :: #config(GPU_DEBUG, ODIN_DEBUG)
-VALIDATION :: #config(GPU_VALIDATION, true)
-VALIDATION_STRICT :: #config(GPU_VALIDATION_STRICT, true)
 
 when ODIN_OS == .Windows {
     DEFAULT_BACKEND :: BACKEND_D3D11
@@ -67,7 +67,6 @@ State :: struct #align(64) {
     using native:           _State,
     allocator:              runtime.Allocator,
     swapchain_res:          Resource_Handle,
-    swapchain_size:         [2]i32,
     // On WebGPU, the initialization is async.
     fully_initialized:      bool,
 
@@ -567,6 +566,7 @@ create_pipeline :: proc(
 
     // Already exists
     if prev != 0 {
+        assert(_state.pipeline_desc[index] != {})
         validate(desc == _state.pipeline_desc[index], "Hash Collision")
         result = {
             index = Handle_Index(index),
@@ -576,7 +576,7 @@ create_pipeline :: proc(
         return result, true
     }
 
-    log.debug("Creating pipeline")
+    log.debug("Creating pipeline", hash)
 
     state: Pipeline_State
     state.native = _create_pipeline(name, desc) or_return
@@ -640,8 +640,6 @@ create_shader :: proc(
     data: []u8,
     kind: Shader_Kind,
 ) -> (result: Shader_Handle, ok: bool) {
-    defer validate(ok || !VALIDATION_STRICT)
-
     validate(kind != .Invalid)
     validate(len(data) > 0)
 
@@ -667,22 +665,20 @@ create_shader :: proc(
 
 // Resources
 
-// Calling this multiple times re-creates the swapchain.
-update_swapchain :: proc(
-    window: rawptr,
-    size: [2]i32,
-) -> (result: Resource_Handle, ok: bool) {
-    if size.x <= 0 || size.y <= 0 {
-        return _state.swapchain_res, true
-    }
-
-    if size == _state.swapchain_size {
-        return _state.swapchain_res, true
-    }
-
+// This creates or re-creates the swapchain if already exists.
+update_swapchain :: proc(window: rawptr, size: [2]i32) -> (result: Resource_Handle, ok: bool) {
+    validate(size.x > 0, "Swapchain must be non-zero width")
+    validate(size.y > 0, "Swapchain must be non-zero height")
 
     existing, existing_ok := get_internal_resource(_state.swapchain_res)
     if existing_ok {
+        assert(existing.kind == .Swapchain)
+        if existing.size.xy == size {
+            return _state.swapchain_res, true
+        }
+
+        existing.size = {size.x, size.y, 1}
+
         _update_swapchain(&existing.native, window, size) or_return
 
         result = _state.swapchain_res
@@ -701,8 +697,6 @@ update_swapchain :: proc(
 
         _state.swapchain_res = result
     }
-
-    _state.swapchain_size = size
 
     return result, true
 }
@@ -898,6 +892,8 @@ destroy_resource :: proc(handle: Resource_Handle) {
 begin_pass :: proc(desc: Pass_Desc) {
     validate_pass_desc(desc)
     _begin_pass(desc)
+    _state.curr_pipeline = {}
+    _state.curr_pipeline_desc = {}
     _state.curr_pass_desc = desc
 }
 
@@ -1034,11 +1030,14 @@ dispatch_compute :: proc(size: [3]i32) {
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // MARK: Validation
 //
-
+// The validation layer attempts to catch all possible invalid inputs/calls as soon as possible.
 // TODO: validation modes? crash/dbgbreak/log/ignore
+//
+
+// TODO: remove the default msg empty value?
 @(disabled = !VALIDATION)
 validate :: proc(cond: bool, msg: string = "", loc := #caller_location, expr := #caller_expression(cond)) {
-    // Based on 'assert'
+    // Based on 'base:builtin.assert'
     if !cond {
         @(cold)
         internal :: proc(msg: string, expr: string, loc: runtime.Source_Code_Location) {
@@ -1055,7 +1054,7 @@ validate :: proc(cond: bool, msg: string = "", loc := #caller_location, expr := 
                 offs += copy(buf[offs:], msg)
             }
 
-            p("GPU Validation Failed", message = string(buf[:offs]), loc = loc)
+            p("GPU: Validation Failed", message = string(buf[:offs]), loc = loc)
         }
         internal(msg = msg, expr = expr, loc = loc)
     }

@@ -164,8 +164,7 @@ _sleep_ms :: proc(#any_int ms: int) {
 
 @(require_results)
 _get_time_ns :: proc() -> u64 {
-    _js_unsupported()
-    return 0
+    return u64(_tick_now() * 1e6)
 }
 
 
@@ -217,7 +216,7 @@ _destroy_window :: proc(window: Window) {
 
 @(require_results)
 _window_dpi_scale :: proc(window: Window) -> f32 {
-    _js_unsupported()
+    // _js_unsupported()
     return 1.0
 }
 
@@ -235,9 +234,9 @@ _set_window_size :: proc(window: Window, size: [2]i32) {
 
 @(require_results)
 _get_window_frame_rect :: proc(window: Window) -> Rect {
-	rect := js.get_bounding_client_rect("body")
-	dpi := js.device_pixel_ratio()
-	return {
+    rect := js.get_bounding_client_rect("body")
+    dpi := js.device_pixel_ratio()
+    return {
         min = 0,
         size = {
             i32(f64(rect.width) * dpi),
@@ -413,7 +412,7 @@ _file_dialog :: proc(mode: File_Dialog_Mode, default_path: string, patterns: []F
 
 _js_unsupported :: proc(loc := #caller_location) {
     // NOTE: this doesn't mean it won't be implemented at some point if possible.
-    log.warnf("'%s' is not supported on JS target", loc.procedure, location = loc)
+    // log.warnf("'%s' is not supported on JS target", loc.procedure, location = loc)
 }
 
 
@@ -422,69 +421,77 @@ _JS_Event_Callback :: #type proc(event: js.Event)
 @(rodata)
 _js_event_callbacks := [js.Event_Kind]_JS_Event_Callback {
     .Invalid = nil,
-	.Load = nil,
-	.Unload = nil,
-	.Error = nil,
+    .Load = nil,
+    .Unload = nil,
+    .Error = nil,
 
-	.Resize = proc(e: js.Event) {
+    .Resize = proc(e: js.Event) {
         _event_queue_push(Event_Window_Size{
             size = _get_window_frame_rect({}).size,
         })
     },
 
-	.Visibility_Change = nil,
-	.Fullscreen_Change = nil,
-	.Fullscreen_Error = nil,
-	.Click = nil,
-	.Double_Click = nil,
-	.Mouse_Move = nil,
-	.Mouse_Over = nil,
-	.Mouse_Out = nil,
-	.Mouse_Up = nil,
-	.Mouse_Down = nil,
-	.Key_Up = nil,
-	.Key_Down = nil,
-	.Key_Press = nil,
-	.Scroll = nil,
-	.Wheel = nil,
-	.Focus = nil,
-	.Focus_In = nil,
-	.Focus_Out = nil,
-	.Submit = nil,
-	.Blur = nil,
-	.Change = nil,
-	.Hash_Change = nil,
-	.Select = nil,
-	.Animation_Start = nil,
-	.Animation_End = nil,
-	.Animation_Iteration = nil,
-	.Animation_Cancel = nil,
-	.Copy = nil,
-	.Cut = nil,
-	.Paste = nil,
-	.Pointer_Cancel = nil,
-	.Pointer_Down = nil,
-	.Pointer_Enter = nil,
-	.Pointer_Leave = nil,
-	.Pointer_Move = nil,
-	.Pointer_Over = nil,
-	.Pointer_Up = nil,
-	.Got_Pointer_Capture = nil,
-	.Lost_Pointer_Capture = nil,
-	.Pointer_Lock_Change = nil,
-	.Pointer_Lock_Error = nil,
-	.Selection_Change = nil,
-	.Selection_Start = nil,
-	.Touch_Cancel = nil,
-	.Touch_End = nil,
-	.Touch_Move = nil,
-	.Touch_Start = nil,
-	.Transition_Start = nil,
-	.Transition_End = nil,
-	.Transition_Run = nil,
-	.Transition_Cancel = nil,
-	.Context_Menu = nil,
-	.Gamepad_Connected = nil,
-	.Gamepad_Disconnected = nil,
-	.Custom = nil,
+    .Visibility_Change = nil,
+    .Fullscreen_Change = nil,
+    .Fullscreen_Error = nil,
+    .Click = nil,
+    .Double_Click = nil,
+    .Mouse_Move = nil,
+    .Mouse_Over = nil,
+    .Mouse_Out = nil,
+    .Mouse_Up = nil,
+    .Mouse_Down = nil,
+    .Key_Up = nil,
+    .Key_Down = nil,
+    .Key_Press = nil,
+    .Scroll = nil,
+    .Wheel = nil,
+    .Focus = nil,
+    .Focus_In = nil,
+    .Focus_Out = nil,
+    .Submit = nil,
+    .Blur = nil,
+    .Change = nil,
+    .Hash_Change = nil,
+    .Select = nil,
+    .Animation_Start = nil,
+    .Animation_End = nil,
+    .Animation_Iteration = nil,
+    .Animation_Cancel = nil,
+    .Copy = nil,
+    .Cut = nil,
+    .Paste = nil,
+    .Pointer_Cancel = nil,
+    .Pointer_Down = nil,
+    .Pointer_Enter = nil,
+    .Pointer_Leave = nil,
+    .Pointer_Move = nil,
+    .Pointer_Over = nil,
+    .Pointer_Up = nil,
+    .Got_Pointer_Capture = nil,
+    .Lost_Pointer_Capture = nil,
+    .Pointer_Lock_Change = nil,
+    .Pointer_Lock_Error = nil,
+    .Selection_Change = nil,
+    .Selection_Start = nil,
+    .Touch_Cancel = nil,
+    .Touch_End = nil,
+    .Touch_Move = nil,
+    .Touch_Start = nil,
+    .Transition_Start = nil,
+    .Transition_End = nil,
+    .Transition_Run = nil,
+    .Transition_Cancel = nil,
+    .Context_Menu = nil,
+    .Gamepad_Connected = nil,
+    .Gamepad_Disconnected = nil,
+    .Custom = nil,
+}
+
+
+foreign import "odin_env"
+
+foreign odin_env {
+    @(link_name="time_now")     _time_now :: proc "contextless" () -> i64 ---
+    @(link_name="tick_now")     _tick_now :: proc "contextless" () -> f64 ---
 }

@@ -46,6 +46,7 @@ import "audio"
 // - MM style functional timestep
 
 RELEASE :: #config(RAVEN_RELEASE, false)
+VALIDATION :: #config(RAVEN_VALIDATION, !RELEASE)
 
 // Enable internal logs. Mostly useful for debugging internals.
 LOG_INTERNAL :: #config(RAVEN_LOG_INTERNAL, false)
@@ -143,6 +144,7 @@ State :: struct #align(64) {
     frame_dur_ns:           u64,
     frame_index:            u64,
     screen_size:            [2]i32,
+    screen_dirty:           bool,
     allocator:              runtime.Allocator,
     window:                 platform.Window,
     dpi_scale:              f32,
@@ -666,10 +668,6 @@ when ODIN_OS == .JS {
             }
         }
 
-        screen := platform.get_window_frame_rect({}).size
-        swap, ok := gpu.update_swapchain(nil, screen)
-        assert(ok)
-
         prev_result := _state.module_result
 
         if !begin_frame() {
@@ -835,6 +833,7 @@ _finish_init :: proc() {
     assert(_state != nil)
 
     _state.screen_size = platform.get_window_frame_rect(_state.window).size
+    _state.screen_dirty = true
 
     // pool128_ok := create_texture_pool(128, 64)
     // assert(pool128_ok)
@@ -1003,11 +1002,27 @@ begin_frame :: proc() -> (keep_running: bool) {
     // In case big file allocations happened...
     defer free_all(context.temp_allocator)
 
-    _state.screen_size = platform.get_window_frame_rect(_state.window).size
+    prev_screen_size := _state.screen_size
+    screen := platform.get_window_frame_rect(_state.window).size
+    if screen.x > 0 && screen.y > 0 {
+        _state.screen_size = screen
+    }
 
-    assert(_state.render_textures_gen[DEFAULT_RENDER_TEXTURE.index] == DEFAULT_RENDER_TEXTURE.gen)
-    _state.render_textures[DEFAULT_RENDER_TEXTURE.index].size = _state.screen_size
-    _state.render_textures[DEFAULT_RENDER_TEXTURE.index].color = gpu.update_swapchain(platform.get_native_window_ptr(_state.window), _state.screen_size) or_else panic("gpu")
+    if prev_screen_size != _state.screen_size {
+        _state.screen_dirty = true
+    }
+
+    if _state.screen_dirty {
+        _state.screen_dirty = false
+        assert(_state.render_textures_gen[DEFAULT_RENDER_TEXTURE.index] == DEFAULT_RENDER_TEXTURE.gen)
+        rt := &_state.render_textures[DEFAULT_RENDER_TEXTURE.index]
+        gpu.destroy_resource(rt.depth)
+        rt.size = _state.screen_size
+        rt.depth = gpu.create_texture_2d("rv-def-rentex-depth", .D_F32, _state.screen_size, render_texture = true) or_else panic("gpu")
+        rt.color = gpu.update_swapchain(platform.get_native_window_ptr(_state.window), _state.screen_size) or_else panic("gpu")
+    }
+
+    assert(_state.render_textures[DEFAULT_RENDER_TEXTURE.index].color != {})
 
     gpu_can_begin_frame := gpu.begin_frame()
     assert(gpu_can_begin_frame)
@@ -2663,14 +2678,14 @@ _destroy_render_texture :: proc(tex: ^Render_Texture) {
     tex^ = {}
 }
 
-resize_render_texture :: proc(handle: Render_Texture_Handle, size: [2]i32) {
-    assert(handle.index != DEFAULT_RENDER_TEXTURE.index)
-    _, tex_ok := get_internal_render_texture(handle)
-    if !tex_ok {
-        log.warn("Trying to resize invalid render texture")
-        return
-    }
-}
+// resize_render_texture :: proc(handle: Render_Texture_Handle, size: [2]i32) {
+//     assert(handle.index != DEFAULT_RENDER_TEXTURE.index)
+//     _, tex_ok := get_internal_render_texture(handle)
+//     if !tex_ok {
+//         log.warn("Trying to resize invalid render texture")
+//         return
+//     }
+// }
 
 @(require_results)
 get_internal_render_texture :: proc(handle: Render_Texture_Handle) -> (result: ^Render_Texture, ok: bool) {

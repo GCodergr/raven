@@ -172,9 +172,10 @@ when BACKEND == BACKEND_WGPU {
 
     _shutdown :: proc() {
         wgpu.QueueRelease(_state.queue)
+        wgpu.TextureRelease(_state.surface_texture.texture)
+        wgpu.SurfaceRelease(_state.surface)
         wgpu.DeviceRelease(_state.device)
         wgpu.AdapterRelease(_state.adapter)
-        wgpu.SurfaceRelease(_state.surface)
         wgpu.InstanceRelease(_state.instance)
     }
 
@@ -713,8 +714,6 @@ when BACKEND == BACKEND_WGPU {
             viewFormats = &formats[0],
         }
 
-        // log.info(tex_desc)
-
         result.tex = wgpu.DeviceCreateTexture(_state.device, &tex_desc)
 
         if result.tex == nil {
@@ -906,7 +905,7 @@ when BACKEND == BACKEND_WGPU {
                 depthClearValue = desc.depth.clear_val,
                 depthReadOnly = false,
                 stencilLoadOp = .Undefined,
-                stencilStoreOp = .Discard, // for now
+                stencilStoreOp = .Undefined, // for now
                 stencilClearValue = 0,
                 stencilReadOnly = false,
             }
@@ -936,7 +935,7 @@ when BACKEND == BACKEND_WGPU {
                 buffer = res.buf,
                 format = _wgpu_index_format(curr.index.format),
                 offset = u64(curr.index.offset),
-                size = wgpu.WHOLE_SIZE,
+                size = u64(res.size.x),
             )
         }
         wgpu.RenderPassEncoderSetPipeline(_state.render_pass_encoder, curr_pip.pip)
@@ -1010,11 +1009,8 @@ when BACKEND == BACKEND_WGPU {
     _bind_constants_items :: proc(offsets: []u32) {
         curr_pip, curr_pip_ok := get_internal_pipeline(_state.curr_pipeline)
 
-        log.info(curr_pip)
-
         assert(curr_pip_ok)
         assert(_state.bind_group_hash[curr_pip.bind_group.index] != 0)
-
 
         bind_group := _state.bind_group_data[curr_pip.bind_group.index]
 
@@ -1041,8 +1037,6 @@ when BACKEND == BACKEND_WGPU {
             offsets_buf[offsets_len] = offset * aligned_size
             offsets_len += 1
         }
-
-        // log.info("Binding group: ", bind_group.group, offsets_buf[:offsets_len])
 
         wgpu.RenderPassEncoderSetBindGroup(
             _state.render_pass_encoder,
