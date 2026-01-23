@@ -4,6 +4,7 @@
 A toolkit for making stylized 2D and 3D games in Odin
 
 ***WARNING: EARLY ALPHA VERSION***
+
 Do NOT use for anything serious yet.
 
 [Discord](https://discord.com/invite/wn5jMMMYe4)
@@ -40,11 +41,13 @@ This is what the per-frame code could look like in a simple hello world app.
 ```odin
 rv.set_layer_params(0, rv.make_screen_camera())
 
+rv.bind_layer(0)
 rv.bind_texture("thick")
 rv.draw_text("Hello World!", {100, 100, 0})
 
 rv.upload_gpu_layers()
-rv.render_gpu_layer(0, rv.DEFAULT_RENDER_TEXTURE, clear_color = rv.Vec3{0, 0, 0.5} clear_depth = true)
+rv.render_gpu_layer(0, rv.DEFAULT_RENDER_TEXTURE,
+    clear_color = rv.Vec3{0, 0, 0.5} clear_depth = true)
 ```
 
 ## Prequisities
@@ -78,6 +81,8 @@ For info about bug reports and contributing, see [CONTRIBUTING](CONTRIBUTING.md)
 
 # Docs
 
+For more detailed information see the source code directly.
+
 ## Engine Structure
 ```
 raven
@@ -96,22 +101,9 @@ There's also additional tooling like the `build` package.
 
 ## Cheatsheet
 
-TODO - list most common functions in an easily searchable way
+List of most common functions in an easily searchable way.
 
-### Utils
-```odin
-deg(degrees: f32) -> f32                    // Convert degrees to radians
-lerp(a, b: $T, t: f32) -> T                 // Linearly interpolate between A and B
-lexp(a, b: $T, rate: f32) -> T              // Exponential lerp for things like 'a = lexp(a, target, delta*10)'
-fade(alpha: f32) -> Vec4                    // Make a white color with a given alpha value
-gray(val: f32) -> Vec4                      // Value = 0 means black, = 1 means white
-vcast($T: typeid, v: [$N]$E) -> [N]T        // Cast from one type of vector to another
-rot90(v: [2]$T) -> [2]T                     // Rotate a 2D vector 90 degrees counter-clockwise
-unlerp(a, b: f32, x: f32) -> T              // Map x from range a..b to 0..1
-remap(x, a0, a1, b0, b1: f32) -> f32        // Map x from range a0..a1 to b0..b1
-smoothstep(edge0, edge1, x: f32) -> f32     // Generates a smooth curve from x in range edge0..edge1
-oklerp(a, b: Vec4, t: f32) -> Vec4          // Interpolate colors with OKLAB
-```
+NOT COMPLETE YET
 
 ### Assets
 
@@ -146,4 +138,20 @@ mouse_down_time(button: Mouse_Button) -> f32
 mouse_pressed(button: Mouse_Button, buf: f32 = 0) -> bool
 mouse_repeated(button: Mouse_Button) -> bool
 mouse_released(button: Mouse_Button) -> bool
+```
+
+
+### Utils
+```odin
+deg(degrees: f32) -> f32                    // Convert degrees to radians
+lerp(a, b: $T, t: f32) -> T                 // Linearly interpolate between A and B
+lexp(a, b: $T, rate: f32) -> T              // Exponential lerp for things like 'a = lexp(a, target, delta*10)'
+fade(alpha: f32) -> Vec4                    // Make a white color with a given alpha value
+gray(val: f32) -> Vec4                      // Value = 0 means black, = 1 means white
+vcast($T: typeid, v: [$N]$E) -> [N]T        // Cast from one type of vector to another
+rot90(v: [2]$T) -> [2]T                     // Rotate a 2D vector 90 degrees counter-clockwise
+unlerp(a, b: f32, x: f32) -> T              // Map x from range a..b to 0..1
+remap(x, a0, a1, b0, b1: f32) -> f32        // Map x from range a0..a1 to b0..b1
+smoothstep(edge0, edge1, x: f32) -> f32     // Generates a smooth curve from x in range edge0..edge1
+oklerp(a, b: Vec4, t: f32) -> Vec4          // Interpolate colors with OKLAB
 ```
