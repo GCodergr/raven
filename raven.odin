@@ -9,7 +9,6 @@ import "core:slice"
 import "core:path/filepath"
 import "core:math/linalg"
 import "core:math"
-import "core:os" // TODO nuke this
 import "core:fmt"
 import "base:runtime"
 import debug_trace "core:debug/trace"
@@ -20,10 +19,6 @@ import "platform"
 import "rscn"
 import "audio"
 import "ufmt"
-
-// BEFORE RELEASE
-// TODO: Immediate-mode draw mesh
-// TODO: Immediate-mode draw line
 
 // TODO: go through all TODOs
 
@@ -516,7 +511,8 @@ DRAW_SORT_DIST_BITS :: 14
 MAX_DRAW_SORT_KEY_DIST :: (1 << DRAW_SORT_DIST_BITS) - 1
 
 // NOTE: the sort distance could be packed in fewer bits.
-Draw_Sort_Key :: bit_field [3]u32 {
+// HACK: TODO: u128 is stupid. This entire structure needs to be smaller.
+Draw_Sort_Key :: bit_field u128 {
     index_num:      u16 | 16,
     index_offs:     u32 | 32,
     fill:           Fill_Mode | 2,
@@ -783,7 +779,7 @@ get_context :: proc "contextless" () -> (result: runtime.Context) {
 
 init_context_state :: proc(ctx: ^Context_State) {
     _state.context_state.logger = {
-        file_handle = os.INVALID_HANDLE, // TODO nuke this bullshit
+        file_handle = ~uintptr(0),
         ident = "",
     }
 
@@ -3348,15 +3344,6 @@ _upload_gpu_layer_constants :: proc() {
     gpu.update_constants(_state.draw_layers_consts, gpu.ptr_bytes(&consts_buf))
 }
 
-// TODO
-// HACK
-// We need better reordering
-_draw_sort_key_less :: proc(a, b: Draw_Sort_Key) -> bool {
-    adata := a
-    bdata := b
-    return runtime.memory_compare(&adata, &bdata, size_of(Draw_Sort_Key)) == -1
-}
-
 // This takes all the draw_* command data and uploads them to GPU buffers.
 // Call render_gpu_layer(...) to actually draw.
 // NOTE: until the start of the next frame, all draw_* commands after this call will be ignored.
@@ -3420,7 +3407,8 @@ upload_gpu_layers :: proc() {
         if .No_Reorder not_in layer.flags {
             keys := layer.sprites.key[:len(layer.sprites)]
 
-            indices := slice.sort_by_with_indices(keys, _draw_sort_key_less, context.temp_allocator)
+            #assert(size_of(Draw_Sort_Key) == size_of(u128))
+            indices := slice.sort_with_indices(transmute([]u128)keys, context.temp_allocator)
             slice.sort_from_permutation_indices(instances, indices)
         }
 
@@ -3519,7 +3507,8 @@ upload_gpu_layers :: proc() {
 
         if .No_Reorder not_in layer.flags {
             keys := layer.meshes.key[:len(layer.meshes)]
-            indices := slice.sort_by_with_indices(keys, _draw_sort_key_less, context.temp_allocator)
+            #assert(size_of(Draw_Sort_Key) == size_of(u128))
+            indices := slice.sort_with_indices(transmute([]u128)keys, context.temp_allocator)
             slice.sort_from_permutation_indices(instances, indices)
         }
 
@@ -3651,8 +3640,6 @@ upload_gpu_layers :: proc() {
 
     return
 
-    // TODO: somehow refactor? most of this code is shared except the actual const!
-
     _batcher_generate_draws :: proc(
         batcher:        ^Batcher_State,
         dst_batches:    ^[dynamic]Draw_Batch,
@@ -3701,7 +3688,6 @@ upload_gpu_layers :: proc() {
             curr_key = layer_key
         }
     }
-
 }
 
 

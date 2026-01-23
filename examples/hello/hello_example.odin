@@ -57,7 +57,9 @@ _update :: proc(prev_state: ^State) -> ^State {
     // To configure draw state like blending, textures, shaders, current layer, etc, call 'rv.bind_*'
     // You can also call push_binds/pop_binds to save and restore the bind state.
     rv.bind_texture("thick")
-    rv.draw_text("Hello World!", {100, 100, 0}, scale = 4)
+    // Odin strings are UTF-8 encoded, but fonts are currently CP437 16x16 atlases.
+    // Unicode fonts might get supported later.
+    rv.draw_text("Hello World! ☺", {100, 100, 0}, scale = 4)
 
     rv.draw_line({10, 10, 0}, {500, rv.nsin(rv.get_time()) * 500, 0}, 40, rect = {0, 0.001})
 

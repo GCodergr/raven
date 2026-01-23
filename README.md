@@ -27,8 +27,24 @@ Inspired by Raylib, Sokol and PICO8.
 - Minimal dependencies
     - the core of the engine is implemented fully from scratch, see `platform` and `gpu`
 
-#### In-progress
-- Shader Transpiler
+## Roadmap
+- Lightweight shader transpiler
+- Better fonts
+    - Draw text iterator
+    - Unicode font support (currently only CP437 atlases are supported)
+
+## Simple Example
+
+
+```odin
+rv.set_layer_params(0, rv.make_screen_camera())
+
+rv.bind_texture("thick")
+rv.draw_text("Hello World!", {100, 100, 0})
+
+rv.upload_gpu_layers()
+rv.render_gpu_layer(0, rv.DEFAULT_RENDER_TEXTURE, clear_color = rv.Vec3{0, 0, 0.5} clear_depth = true)
+```
 
 ## Prequisities
 Install [Odin](https://github.com/odin-lang/Odin) and make sure it's in your path. Check the [Official Install docs](https://odin-lang.org/docs/install/) for more info.
@@ -52,18 +68,14 @@ odin run build -- run_hot examples\hello
 
 All assets are hotreloaded automatically, just pass `watch = true` flag when loading an asset directory.
 
-Code can be hot
+Code can be hot reloaded by running `odin run build -- run_hot my_package`.
 
 
 ## Contributing
 For info about bug reports and contributing, see [CONTRIBUTING](CONTRIBUTING.md)
 
 
-
 # Docs
-
-TODO - minimal example
-
 
 ## Engine Structure
 ```
