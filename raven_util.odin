@@ -24,6 +24,8 @@ PINK        :: Vec4{1, 0, 1, 1}
 ORANGE      :: Vec4{1, 0.5, 0, 1}
 PURPLE      :: Vec4{0.5, 0, 1, 1}
 
+quat_angle_axis :: linalg.quaternion_angle_axis_f32
+
 @(require_results)
 deg :: #force_inline proc "contextless" (degrees: f32) -> (radians: f32) {
     return degrees * math.RAD_PER_DEG
@@ -169,10 +171,11 @@ heatmap_color :: proc(val: f32) -> (result: Vec4) {
     return result
 }
 
+// ZXY order for first-person view.
 @(require_results)
 euler_rot :: proc(angles: Vec3) -> Quat {
-    return linalg.quaternion_from_euler_angle_y_f32(angles.x) *
-           linalg.quaternion_from_euler_angle_x_f32(angles.y) *
+    return linalg.quaternion_from_euler_angle_y_f32(angles.y) *
+           linalg.quaternion_from_euler_angle_x_f32(angles.x) *
            linalg.quaternion_from_euler_angle_z_f32(angles.z)
 }
 

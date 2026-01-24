@@ -64,12 +64,16 @@ MAX_TEXTURE_RESOURCES :: 64
 MAX_SHADERS :: 64
 MAX_FILES :: 1024
 
+MAX_TOTAL_SPRITE_INSTANCES :: 1024 * 32
+MAX_TOTAL_MESH_INSTANCES :: 1024 * 64
+MAX_TOTAL_TRIANGLE_INSTANCES :: 1024 * 8
+
 MAX_TEXTURE_POOLS :: 8
 MAX_TEXTURE_POOL_SLICES :: 64
 
 MAX_BIND_STATE_DEPTH :: 64
 
-MAX_TOTAL_DRAW_BATCHES :: 1024
+MAX_TOTAL_DRAW_BATCHES :: 4096
 
 // This is the actual swapchain used for rendering directly to screen.
 DEFAULT_RENDER_TEXTURE :: Render_Texture_Handle{MAX_RENDER_TEXTURES - 1, 0}
@@ -516,18 +520,19 @@ MAX_DRAW_SORT_KEY_DIST :: (1 << DRAW_SORT_DIST_BITS) - 1
 
 // NOTE: the sort distance could be packed in fewer bits.
 // HACK: TODO: u128 is stupid. This entire structure needs to be smaller.
+// Order of batches is defined bottom-up by these fields.
 Draw_Sort_Key :: bit_field u128 {
-    index_num:      u16 | 16,
-    index_offs:     u32 | 32,
+    texture:        u8 | 8,
+    texture_mode:   Bind_Texture_Mode | 2,
+    dist:           u16 | DRAW_SORT_DIST_BITS,
     fill:           Fill_Mode | 2,
     depth_write:    bool | 1,
     depth_test:     bool | 1,
-    texture:        u8 | 8,
-    texture_mode:   Bind_Texture_Mode | 2,
     group:          u8 | 6,
     ps:             u8 | 6,
     vs:             u8 | 6,
-    dist:           u16 | DRAW_SORT_DIST_BITS,
+    index_num:      u16 | 16,
+    index_offs:     u32 | 32,
     blend:          Blend_Mode | 2,
 }
 
@@ -870,20 +875,20 @@ _finish_init :: proc() {
 
     _state.sprite_inst_buf = gpu.create_buffer("rv-sprite-inst-buf",
         stride = size_of(Sprite_Inst),
-        size = size_of(Sprite_Inst) * 1024 * 32,
+        size = size_of(Sprite_Inst) * MAX_TOTAL_SPRITE_INSTANCES,
         usage = .Dynamic,
     ) or_else panic("gpu")
 
     _state.triangle_vbuf = gpu.create_buffer("rv-triangle-vbuf",
         stride = size_of(Mesh_Vertex),
-        size = size_of(Mesh_Vertex) * 3 * 1024 * 8,
+        size = size_of(Mesh_Vertex) * 3 * MAX_TOTAL_TRIANGLE_INSTANCES,
         usage = .Dynamic,
     ) or_else panic("gpu")
 
 
     _state.mesh_inst_buf = gpu.create_buffer("rv-mesh-inst-buf",
         stride = size_of(Mesh_Inst),
-        size = size_of(Mesh_Inst) * 1024 * 32,
+        size = size_of(Mesh_Inst) * MAX_TOTAL_MESH_INSTANCES,
         usage = .Dynamic,
     ) or_else panic("gpu")
 
@@ -3496,10 +3501,12 @@ upload_gpu_layers :: proc() {
                     (linalg.abs(inst.mat_y) * max(abs(mesh.bounds_min.y), abs(mesh.bounds_max.y))) +
                     (linalg.abs(inst.mat_z) * max(abs(mesh.bounds_min.z), abs(mesh.bounds_max.z)))
 
-                dist := linalg.dot(forw, inst.pos - layer.camera.pos)
-                // NOTE: should this get inverted for opaque meshes to minimize overdraw?
-                // What about Z prepass?
-                key.dist = ~u16(dist * mesh_dist_factor) // invert
+                if key.blend != .Opaque || true {
+                    dist := linalg.dot(forw, inst.pos - layer.camera.pos)
+                    // NOTE: should this get inverted for opaque meshes to minimize overdraw?
+                    // What about Z prepass?
+                    key.dist = ~u16(dist * mesh_dist_factor) // invert
+                }
 
                 if !is_box_in_frustum(frustum, inst.pos, box_rad) {
                     unordered_remove_soa(&layer.meshes, mesh_index)
@@ -4213,15 +4220,15 @@ Counter_State :: struct {
 
 Counter_Kind :: enum u8 {
     CPU_Frame_Ns,
+    Num_Draw_Calls,
+    Num_Total_Instances,
+    Num_Non_Culled_Instances,
     // TODO:
     // GPU_Frame_Ns
     // Upload_Ns,
     // Total_Draw_Layer_Ns,
     // Temp_Allocs,
     // Temp_Bytes,
-    Num_Draw_Calls,
-    Num_Total_Instanced,
-    Num_Non_Culled_Instanced,
 }
 
 _counter_add :: proc(kind: Counter_Kind, value: u64) {
@@ -4244,7 +4251,7 @@ _counter_flush :: proc(counter: ^Counter_State) {
 // Displays max of the recent history and a graph.
 // Assumes screenspace camera.
 // 'unit' is for converting e.g. nanoseconds into a reasonable range.
-draw_counter :: proc(kind: Counter_Kind, pos: Vec3, scale: f32 = 1, unit: f32 = 1, col: Vec4 = 1) {
+draw_counter :: proc(kind: Counter_Kind, pos: Vec3, scale: f32 = 1, unit: f32 = 1, col: Vec4 = 1, show_text := true) {
     scope_binds()
     bind_texture_by_handle(_state.default_font_texture)
     bind_blend(.Alpha)
@@ -4277,17 +4284,19 @@ draw_counter :: proc(kind: Counter_Kind, pos: Vec3, scale: f32 = 1, unit: f32 = 
         max_val = max(val, max_val)
     }
 
-    // last := counter.vals[counter.total_num % COUNTER_HISTORY]
-    text: string
-    if unit == 1 {
-        text = ufmt.tprintf("%i", max_val)
-    } else {
-        text = ufmt.tprintf("%f", f64(max_val) * f64(unit))
-    }
+    if show_text {
+        // last := counter.vals[counter.total_num % COUNTER_HISTORY]
+        text: string
+        if unit == 1 {
+            text = ufmt.tprintf("%i", max_val)
+        } else {
+            text = ufmt.tprintf("%f", f64(max_val) * f64(unit))
+        }
 
-    // draw_text(, pos + {64 + 12, 0, 0}, col = col)
-    draw_text(text, pos + {64 + 12, 4, 0}, col = col)
-    draw_text(text, pos + {64 + 12 + 1, 4 - 1, 0.01}, col = BLACK)
+        // draw_text(, pos + {64 + 12, 0, 0}, col = col)
+        draw_text(text, pos + {64 + 16, 4, 0}, col = col, scale = math.ceil_f32(_state.dpi_scale))
+        draw_text(text, pos + {64 + 16 + 1, 4 - 1, 0.01}, col = BLACK, scale = math.ceil_f32(_state.dpi_scale))
+    }
 }
 
 

@@ -1,6 +1,5 @@
 package raven_example_hello
 
-import "base:runtime"
 import rv "../.."
 
 state: ^State
@@ -8,7 +7,7 @@ state: ^State
 State :: struct {
     // Commonly you would store ALL your game data here.
     // Everything has to be within this struct to allow for hotreloading, otherwise the data would get lost.
-    data: u32,
+    some_data: u32,
 }
 
 // The main procedure is your app's entry point.
@@ -21,7 +20,6 @@ main :: proc() {
 // The '@export' qualifier makes sure it's visible when running in hot-reload mode.
 // The state_size is there for error checking.
 @export _module_api :: proc "contextless" () -> (result: rv.Module_API) {
-    runtime.print_string("MODULE API\n")
     result = {
         state_size = size_of(State),
         init = transmute(rv.Init_Proc)_init,
@@ -33,9 +31,7 @@ main :: proc() {
 
 _init :: proc() -> ^State {
     state = new(State)
-
     rv.init_window("Raven Hello Example")
-
     return state
 }
 
