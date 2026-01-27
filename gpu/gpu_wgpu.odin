@@ -434,7 +434,7 @@ when BACKEND == BACKEND_WGPU {
         }
 
         if true {
-            for item, i in layout_entries[:num_entries] {
+            for item, _ in layout_entries[:num_entries] {
                 kind: string = "???"
 
                 if item.buffer != {} {
