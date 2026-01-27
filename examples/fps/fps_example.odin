@@ -12,17 +12,7 @@ State :: struct {
     pos:        rv.Vec3,
     vel:        rv.Vec3,
     ang:        rv.Vec3,
-    ang_offs:   Spring3,
-    pos_offs:   Spring3,
-}
-
-Spring3 :: struct {
-    val:    rv.Vec3,
-    delta:  rv.Vec3,
-}
-
-update_spring :: proc(spr: ^Spring3, target: rv.Vec3 = 0, stiff: f32 = 1, damp: f32 = 1) {
-
+    gun_pos:    rv.Vec3,
 }
 
 main :: proc() {
@@ -76,7 +66,7 @@ _update :: proc(prev: ^State) -> ^State {
 
     state.ang.z += move.x * delta * -0.2
 
-    cam_rot := rv.euler_rot(state.ang)
+    cam_rot := linalg.quaternion_normalize(rv.euler_rot(state.ang))
     mat := linalg.matrix3_from_quaternion_f32(cam_rot)
 
     grounded := state.pos.y <= 1
@@ -106,12 +96,22 @@ _update :: proc(prev: ^State) -> ^State {
         cam_pos.y += 0.1 * math.sin_f32(rv.get_time() * 11) * rv.remap_clamped(linalg.length(state.vel.xz), 0, 2, 0, 1)
     }
 
-    rv.set_layer_params(0, rv.make_3d_perspective_camera(cam_pos, cam_rot))
+    state.gun_pos = rv.lexp(state.gun_pos, cam_pos + mat * rv.Vec3{0.2, -0.1, 0.2}, delta * 100)
+
+    rv.set_layer_params(0, rv.make_3d_perspective_camera(cam_pos, cam_rot, rv.deg(110)))
     rv.set_layer_params(1, rv.make_screen_camera())
 
     rv.bind_texture("default")
     rv.bind_depth_test(true)
     rv.bind_depth_write(true)
+
+    rv.draw_mesh_by_handle(
+        rv.get_mesh("Cube"),
+        state.gun_pos,
+        rot = cam_rot,
+        scale = {0.03, 0.05, 0.12},
+    )
+
 
     rv.draw_mesh_by_handle(
         rv.get_mesh("Plane"),
