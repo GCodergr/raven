@@ -76,7 +76,7 @@ _update :: proc(prev_state: ^State) -> ^State {
                     rand.float32() * 2.0 - 1.0,
                     rand.float32() * 2.0 - 1.0,
                 }),
-                timer = rand.float32_range(1, 4),
+                timer = rand.float32_range(2, 4),
             }
 
             index, index_ok := gpu.bit_pool_find_0(state.pool)
