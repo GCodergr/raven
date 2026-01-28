@@ -62,6 +62,8 @@ rv.render_gpu_layer(0, rv.DEFAULT_RENDER_TEXTURE,
 
 To see what the entire full code looks like, check out [examples/hello](examples/hello/hello_example.odin).
 
+# Getting Started
+
 ## Prequisities
 Install [Odin](https://github.com/odin-lang/Odin) and make sure it's in your path. Check the [Official Install docs](https://odin-lang.org/docs/install/) for more info.
 
@@ -79,6 +81,15 @@ Alternatively you can run them in hot-reload mode:
 odin run build -- run_hot examples\hello
 ```
 
+## Project Setup
+
+The recommended approach is using [git subtrees]. From your project's root folder, clone the repo with this command:
+```
+git subtree add --prefix=raven https://github.com/jakubtomsu/raven main --squash
+```
+
+
+# Docs
 
 ## Hot-reload
 
@@ -102,14 +113,7 @@ And now just enter `localhost:8000` into a browser search bar.
 To see the output log, open up the Developer Tools Console (F12 usually).
 
 Please note this is still very early, the JS platform is unfinished and the WebGPU support might run into some issues.
-
 You can also ensure WebGPU is behaving correctly locally with `odin run my_package -define:GPU_BACKEND=WGPU`, however the wgpu-native used on desktop can be slightly different than the Chrome Dawn implementation.
-
-## Contributing
-For info about bug reports and contributing, see [CONTRIBUTING](CONTRIBUTING.md)
-
-
-# Docs
 
 For more detailed information see the source code directly.
 
@@ -188,7 +192,5 @@ oklerp(a, b: Vec4, t: f32) -> Vec4          // Interpolate colors with OKLAB
 
 
 
-
-
-
-
+# Contributing
+For info about bug reports and contributing, see [CONTRIBUTING](CONTRIBUTING.md)
