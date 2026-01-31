@@ -135,14 +135,21 @@ parse_header :: proc(p: ^Parser) -> (result: Header, err: Error) {
         p.iter[0] != 'r' ||
         p.iter[1] != 's' ||
         p.iter[2] != 'c' ||
-        p.iter[3] != 'n' ||
-        p.iter[4] != '\n'
+        p.iter[3] != 'n'
     {
-        log.errorf("rscn: header magic mismatch: '%s'", p.iter[:5])
+        log.errorf("rscn: header magic mismatch: '%s'", p.iter[:4])
         return {}, .Error
     }
 
-    p.iter = p.iter[5:]
+    p.iter = p.iter[4:]
+
+    if p.iter[0] == '\r' {
+        p.iter = p.iter[1:]
+    }
+
+    if p.iter[0] == '\n' {
+        p.iter = p.iter[1:]
+    }
 
     result.version_major = -1
 
