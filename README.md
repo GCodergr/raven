@@ -129,20 +129,17 @@ You can also ensure WebGPU is behaving correctly locally with `odin run my_packa
 For more detailed information see the source code directly.
 
 ## Engine Structure
-```
-raven
-├─ platform
-│  ├─ win32
-│  ├─ js
-├─ gpu
-│  ├─ d3d11
-│  ├─ wgpu
-├─ audio
-│  ├─ miniaudio
-```
-
-There's also additional tooling like the `build` package.
-
+- raven
+  - base - lightweight core utils with no dependencies, used by other packages
+  - build - tool for exporting builds and hot-reloading
+  - platform - majority of OS specific code
+    - win32
+    - js
+  - gpu - Low-level GPU Rendering layer
+    - d3d11
+    - wgpu
+  - audio
+    - miniaudio
 
 ## Cheatsheet
 
@@ -185,6 +182,10 @@ mouse_repeated(button: Mouse_Button) -> bool
 mouse_released(button: Mouse_Button) -> bool
 ```
 
+### Sounds
+```odin
+play_sound(resource: Sound_Resource_Handle, ...) -> Sound_Handle
+```
 
 ### Utils
 ```odin
@@ -205,3 +206,4 @@ oklerp(a, b: Vec4, t: f32) -> Vec4          // Interpolate colors with OKLAB
 
 # Contributing
 For info about bug reports and contributing, see [CONTRIBUTING](CONTRIBUTING.md)
+
