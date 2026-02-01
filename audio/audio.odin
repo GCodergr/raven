@@ -179,7 +179,7 @@ recycle_old_sounds :: proc() {
         }
 
         if _is_sound_finished(sound) {
-            base.log(.Info, "Recycling sound %v", handle)
+            // base.log(.Info, "Recycling sound %v", handle)
             destr_ok := destroy_sound(handle)
             assert(destr_ok)
         }

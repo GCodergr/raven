@@ -130,7 +130,6 @@ when BACKEND == BACKEND_MINIAUDIO {
         }
 
         path := _ma_handle_cstr(Handle(resource_handle))
-        log.info("init sound", resource_handle, path)
 
         _ma_check(ma.sound_init_from_file(
             &_state.engine,

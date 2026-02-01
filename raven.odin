@@ -4441,6 +4441,10 @@ play_sound :: proc(
     return result, true
 }
 
+destroy_sound :: proc(handle: Sound_Handle) {
+    audio.destroy_sound(handle)
+}
+
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////

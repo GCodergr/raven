@@ -29,6 +29,8 @@ State :: struct {
 
     berry_sound:    rv.Sound_Resource_Handle,
     death_sound:    rv.Sound_Resource_Handle,
+    music_res:      rv.Sound_Resource_Handle,
+    music:          rv.Sound_Handle,
 }
 
 Screen_ID :: enum u8 {
@@ -80,11 +82,10 @@ _init :: proc() -> ^State {
     platform.set_mouse_relative(rv._state.window, true)
     platform.set_mouse_visible(false)
 
-
     state.death_sound = rv.create_sound_resource_encoded("death", #load("../data/snake_death_sound.wav")) or_else panic("load")
     state.berry_sound = rv.create_sound_resource_encoded("berry", #load("../data/snake_powerup_sound.wav")) or_else panic("load")
+    state.music_res = rv.create_sound_resource_encoded("music", #load("../data/Emerald.ogg")) or_else panic("load")
 
-    new_game()
     state.screen = .Menu
 
     return state
@@ -119,6 +120,11 @@ new_game :: proc() {
         }
     }
 
+    state.snake.pos = repel_from_obstacles(state.snake.pos, 0.3)
+
+    rv.destroy_sound(state.music)
+    state.music = rv.play_sound(state.music_res, loop = true)
+
     spawn_berry()
 }
 
@@ -127,18 +133,8 @@ spawn_berry :: proc() {
         pos = rand_dir(),
     }
 
-    for obst in state.obsts[:state.num_obsts] {
-        dist := linalg.length(state.berry.pos - obst.pos)
-
-        rad := obst.rad + 0.2
-
-        if dist > rad {
-            continue
-        }
-
-        dir := linalg.normalize0(state.berry.pos - obst.pos)
-
-        state.berry.pos = linalg.normalize0(state.berry.pos + dir * (rad - dist))
+    for i in 0..<5 {
+        state.berry.pos = repel_from_obstacles(state.berry.pos, 0.5)
     }
 
     rv.play_sound(state.berry_sound, pitch = rand.float32_range(0.9, 1.2))
@@ -177,7 +173,7 @@ _update :: proc(prev: ^State) -> ^State {
     delta := rv.get_delta_time()
 
     //
-    // TICK
+    // MARK: TICK
     //
 
     if state.screen == .Game {
@@ -209,8 +205,8 @@ _update :: proc(prev: ^State) -> ^State {
 
         world_dir := mat[0] * snake.dir.x + mat[1] * snake.dir.y
 
-        speed: f32 = 0.7 + f32(snake.num_segments / 4) * 0.03
-        speed *= rv.remap_clamped(state.berry_timer, 0, 2, 1.1, 1)
+        speed: f32 = 0.7 + f32(snake.num_segments / 4) * 0.05
+        speed *= rv.remap_clamped(state.berry_timer, 0, 0.5, 1.5, 1)
 
         snake.pos += world_dir * delta * speed
         snake.pos = linalg.normalize0(snake.pos)
@@ -226,19 +222,7 @@ _update :: proc(prev: ^State) -> ^State {
         }
 
         for &seg, i in snake.segments[:snake.num_segments] {
-            for obst in state.obsts[:state.num_obsts] {
-                dist := linalg.length(seg.pos - obst.pos)
-
-                rad := obst.rad + 0.1
-
-                if dist > rad {
-                    continue
-                }
-
-                dir := linalg.normalize0(seg.pos - obst.pos)
-
-                seg.pos = linalg.normalize0(seg.pos + dir * (rad - dist))
-            }
+            seg.pos = repel_from_obstacles(seg.pos, 0.1)
         }
 
         for &seg, i in snake.segments[:snake.num_segments] {
@@ -274,13 +258,15 @@ _update :: proc(prev: ^State) -> ^State {
 
         if die {
             rv.play_sound(state.death_sound, pitch = rand.float32_range(0.9, 1.2))
+            rv.destroy_sound(state.music)
+            state.music = {}
             state.screen = .Death
         }
     }
 
 
     //
-    // DRAW
+    // MARK: DRAW
     //
 
     rv.set_layer_params(0, rv.make_3d_perspective_camera(state.cam_pos, state.cam_rot, state.cam_fov))
@@ -339,13 +325,8 @@ _update :: proc(prev: ^State) -> ^State {
             col = rv.RED,
         )
 
-        rv.draw_text(ufmt.tprintf("SCORE %i", score),
-            {screen.x * 0.5, screen.y * 0.35, 0.1}, anchor = 0.5,
-            scale = 2)
-
-        rv.draw_text("Press SPACE to continue",
-            {screen.x * 0.5, screen.y * 0.25, 0.1}, anchor = 0.5,
-            scale = 2)
+        rv.draw_text(ufmt.tprintf("SCORE %i", score), {screen.x * 0.5, screen.y * 0.35, 0.1}, anchor = 0.5, scale = 2)
+        rv.draw_text("Press SPACE to continue", {screen.x * 0.5, screen.y * 0.25, 0.1}, anchor = 0.5, scale = 2, col = rv.LIGHT_GRAY)
 
         if rv.key_pressed(.Space) {
             state.screen = .Menu
@@ -357,16 +338,13 @@ _update :: proc(prev: ^State) -> ^State {
             {screen.x * 0.5, screen.y * 0.5 + math.sin_f32(rv.get_time() * 2) * 10, 0},
             anchor = 0.5,
             scale = 4,
-            rot = rv.quat_angle_axis(math.sin_f32(rv.get_time() * 0.5) * 0.05, {0, 0, 1})
+            rot = rv.quat_angle_axis(math.sin_f32(rv.get_time() * 0.5) * 0.05, {0, 0, 1}),
+            col = rv.ORANGE,
         )
 
-        rv.draw_text("Press SPACE to play",
-            {screen.x * 0.5, screen.y * 0.35, 0.1}, anchor = 0.5,
-            scale = 2)
-
-        rv.draw_text(ufmt.tprintf("HIGHSCORE %i", state.max_score),
-            {screen.x * 0.5, screen.y * 0.25, 0.1}, anchor = 0.5,
-            scale = 2)
+        rv.draw_text("Press SPACE to play", {screen.x * 0.5, screen.y * 0.35, 0.1}, anchor = 0.5, scale = 2, col = rv.LIGHT_GRAY)
+        rv.draw_text(ufmt.tprintf("HIGHSCORE %i", state.max_score), {screen.x * 0.5, screen.y * 0.25, 0.1}, anchor = 0.5, scale = 2)
+        rv.draw_text("Music by Nolram. Thank you!", {screen.x * 0.5, 32, 0.1}, anchor = 0.5, scale = 2, col = rv.hex_color(0x06e4c2))
 
         if rv.key_pressed(.Space) {
             new_game()
@@ -382,4 +360,23 @@ _update :: proc(prev: ^State) -> ^State {
     rv.render_gpu_layer(1, rv.DEFAULT_RENDER_TEXTURE, nil, false)
 
     return state
+}
+
+repel_from_obstacles :: proc(pos: rv.Vec3, rad: f32) -> rv.Vec3 {
+    pos := pos
+    for obst in state.obsts[:state.num_obsts] {
+        dist := linalg.length(pos - obst.pos)
+
+        r := obst.rad + rad
+
+        if dist > r {
+            continue
+        }
+
+        dir := linalg.normalize0(pos - obst.pos)
+
+        pos = linalg.normalize0(pos + dir * (r - dist))
+    }
+
+    return pos
 }
