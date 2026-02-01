@@ -64,7 +64,7 @@ when BACKEND == BACKEND_MINIAUDIO {
     }
 
     _get_output_sample_rate :: proc() -> u32 {
-        return ma.engine_get_sample_rate(_state.engine)
+        return ma.engine_get_sample_rate(&_state.engine)
     }
 
 
