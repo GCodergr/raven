@@ -15,12 +15,16 @@ main :: proc() {
     assert(res_ok)
 
     for i in 0..<10 {
+        audio.update()
+
         sound, sound_ok := audio.create_sound(res)
         assert(sound_ok)
         ufmt.eprintfln("Iter %i : %v", i, sound)
         audio.set_sound_playing(sound, true)
         audio.set_sound_pitch(sound, 0.5 + f32(i) * 0.2)
 
-        time.sleep(time.Second / 2)
+        for audio.get_sound_time(sound, .Percentage) < 0.5 {
+            time.sleep(time.Millisecond)
+        }
     }
 }

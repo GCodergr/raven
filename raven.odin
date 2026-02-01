@@ -37,7 +37,7 @@ import "base/ufmt"
 // TODO: uniform anchor values
 // TODO: drawing real lines, not quads
 // TODO: default module init/shutdown procs
-// TODO: load_* vs create_* naming convention
+// TODO: load_* vs create_*, insert_* naming convention, and resource management naming in general
 
 // ARTICLES
 // - blog post about two level bit sets
@@ -161,6 +161,7 @@ State :: struct #align(64) {
     frame_index:            u64,
     screen_size:            [2]i32,
     screen_dirty:           bool,
+    ended_frame:            bool,
     allocator:              runtime.Allocator,
     window:                 platform.Window,
     dpi_scale:              f32,
@@ -239,6 +240,12 @@ State :: struct #align(64) {
 
     files_hash:             [MAX_FILES]Hash,
     files:                  [MAX_FILES]File,
+
+    // NOTE: currently, sound resource handles are direct handles into the audio package.
+    // This means there is not necessarily an indirection, which simplifies things.
+    // The name tracking is only important for hotreloads and name lookups.
+    sound_resources_hash:   [MAX_SHADERS]Hash,
+    sound_resources:        [MAX_SHADERS]Sound_Resource_Handle,
 
     platform_state:         platform.State,
     gpu_state:              gpu.State,
@@ -600,6 +607,8 @@ Init_Proc ::       #type proc() -> rawptr
 Shutdown_Proc ::   #type proc(rawptr)
 Update_Proc ::     #type proc(rawptr) -> rawptr
 
+// WARNING: this structure must match the one in build_hot.odin exactly,
+// since it's passed between DLLs when hot-reloading.
 Module_API :: struct {
     state_size: i64,
     init:       Init_Proc,
@@ -709,7 +718,9 @@ when ODIN_OS == .JS {
             return false
         }
 
-        end_frame()
+        if !_state.ended_frame {
+            end_frame()
+        }
 
         return true
     }
@@ -772,7 +783,9 @@ when ODIN_OS == .JS {
             return nil
         }
 
-        end_frame()
+        if !_state.ended_frame {
+            end_frame()
+        }
 
         return _state
     }
@@ -998,11 +1011,14 @@ _finish_init :: proc() {
 }
 
 shutdown_state :: proc() {
+    log.info("shutdown...")
     if _state == nil {
         return
     }
 
     _print_stats_report()
+
+    log.info("audio shutdown...")
 
     audio.shutdown()
     gpu.shutdown()
@@ -1091,6 +1107,8 @@ begin_frame :: proc() -> (keep_running: bool) {
     free_all(context.temp_allocator)
     // In case big file allocations happened...
     defer free_all(context.temp_allocator)
+
+    _state.ended_frame = false
 
     prev_screen_size := _state.screen_size
     screen := platform.get_window_frame_rect(_state.window).size
@@ -1305,7 +1323,9 @@ begin_frame :: proc() -> (keep_running: bool) {
 }
 
 end_frame :: proc(vsync := true) {
+    validate(!_state.ended_frame)
 
+    _state.ended_frame = true
     curr_time := platform.get_time_ns()
 
     frame_work_dur_ns := curr_time - _state.last_time
@@ -4326,20 +4346,42 @@ screen_to_world_ray :: proc(pos: Vec2, cam: Camera) -> Vec3 {
 
 load_sound_resource :: proc(path: string) -> (result: Sound_Resource_Handle, ok: bool) #optional_ok {
     name := strip_path_name(path)
-    log.infof("Loading sound resource '%s' from '%s'", name, path)
     // TODO: register the resource internally for hot-reload
-    data := get_file_by_name(path) or_return
+    data, data_ok := get_file_by_name(path)
+    if !data_ok {
+        log.error("Failed to load sound resource '%s' from '%s', VFS file not found", name, path)
+    }
+
     return create_sound_resource_encoded(name, data)
 }
 
 create_sound_resource_encoded :: proc(name: string, data: []byte) -> (result: Sound_Resource_Handle, ok: bool) #optional_ok {
-    log.infof("Creating sound resource '%s' of size %i bytes", name, len(data))
-    return audio.create_resource_encoded(data)
+    log.infof("Creating sound resource '%s' with size %i bytes", name, len(data))
+
+    res := audio.create_resource_encoded(data) or_return
+
+    if !insert_sound_resource_by_hash(name, res) {
+        // NOTE: currently this can continue running somewhat correctly, the result is valid.
+        // But the resource won't be tracked properly internally.
+        log.error("Failed to insert named sound resource '%s'")
+    }
+
+    return res, true
 }
 
-// create_sound_resource_decoded :: proc(name: string, data: []$T, stereo: bool) -> (result: Sound_Resource_Handle, ok: bool) {
-// }
+get_sound_resource :: proc(name: string) -> (result: Sound_Resource_Handle, ok: bool) #optional_ok {
+    hash := hash_name(name)
+    index := _table_lookup_hash(&_state.meshes_hash, hash) or_return
+    return _state.sound_resources[index], true
+}
 
+@(require_results)
+insert_sound_resource_by_hash :: proc(name: string, handle: Sound_Resource_Handle) -> bool {
+    hash := hash_name(name)
+    index, _ := _table_insert_hash(&_state.sound_resources_hash, hash) or_return
+    _state.sound_resources[index] = handle
+    return true
+}
 
 play_sound :: proc(
     resource:       Sound_Resource_Handle,
@@ -4352,32 +4394,34 @@ play_sound :: proc(
 ) -> (result: audio.Sound_Handle, ok: bool) #optional_ok {
     validate(resource != {})
 
+    log.infof("Playing sound %v", resource)
+
     result = audio.create_sound(resource_handle = resource, group_handle = {}) or_return
 
-    if delay > 0 {
-        audio.set_sound_start_delay(result, delay, .Seconds)
-    }
+    // if delay > 0 {
+    //     audio.set_sound_start_delay(result, delay, .Seconds)
+    // }
 
     if start {
         audio.set_sound_playing(result, start)
     }
 
-    if loop {
-        audio.set_sound_looping(result, loop)
-    }
+    // if loop {
+    //     audio.set_sound_looping(result, loop)
+    // }
 
-    if volume != 1 {
-        audio.set_sound_volume(result, volume)
-    }
+    // if volume != 1 {
+    //     audio.set_sound_volume(result, volume)
+    // }
 
-    if pitch != 1 {
-        audio.set_sound_pitch(result, pitch)
-    }
+    // if pitch != 1 {
+    //     audio.set_sound_pitch(result, pitch)
+    // }
 
-    if p, p_ok := pos.?; p_ok {
-        audio.set_sound_spatialization(result, true)
-        audio.set_sound_position(result, p)
-    }
+    // if p, p_ok := pos.?; p_ok {
+    //     audio.set_sound_spatialization(result, true)
+    //     audio.set_sound_position(result, p)
+    // }
 
     return result, true
 }

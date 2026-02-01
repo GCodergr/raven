@@ -4,6 +4,7 @@ package raven_audio
 import "../base"
 import "base:intrinsics"
 import "base:runtime"
+import "core:log"
 
 // TODO: sound fading
 // TODO: sound trim range for dynamically chopping big sounds
@@ -172,7 +173,9 @@ recycle_old_sounds :: proc() {
         }
 
         if _is_sound_finished(sound) {
-            destroy_sound(handle)
+            log.warn("Recycling sound", handle)
+            destr_ok := destroy_sound(handle)
+            assert(destr_ok)
         }
     }
 
@@ -213,6 +216,9 @@ create_resource_encoded :: proc(data: []byte) -> (result: Resource_Handle, ok: b
 create_sound :: proc(resource_handle: Resource_Handle, group_handle: Group_Handle = {}, stream_decode := false) -> (result: Sound_Handle, ok: bool) {
     index := base.bit_pool_find_0(_state.sounds_used) or_return
 
+    _, res_ok := get_internal_resource(resource_handle)
+    assert(res_ok)
+
     sound := &_state.sounds[index]
     sound^ = {}
 
@@ -230,12 +236,13 @@ create_sound :: proc(resource_handle: Resource_Handle, group_handle: Group_Handl
     return result, true
 }
 
-destroy_sound :: proc(handle: Sound_Handle) {
-    if _, ok := get_internal_sound(handle); ok {
-        assert(base.bit_pool_check_1(_state.sounds_used, handle.index))
-        base.bit_pool_set_0(&_state.sounds_used, handle.index)
-        _state.sounds_gen[handle.index] += 1
-    }
+destroy_sound :: proc(handle: Sound_Handle) -> bool {
+    sound := get_internal_sound(handle) or_return
+    assert(base.bit_pool_check_1(_state.sounds_used, handle.index))
+    _destroy_sound(sound)
+    base.bit_pool_set_0(&_state.sounds_used, handle.index)
+    _state.sounds_gen[handle.index] += 1
+    return true
 }
 
 is_sound_playing :: proc(handle: Sound_Handle) -> bool {

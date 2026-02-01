@@ -48,8 +48,11 @@ when BACKEND == BACKEND_MINIAUDIO {
     }
 
     _shutdown :: proc() {
+        log.info("ma engine stop")
         ma.engine_stop(&_state.engine)
+        log.info("ma engine uninit")
         ma.engine_uninit(&_state.engine)
+        log.info("ma shutdown done")
     }
 
     _set_listener_transform :: proc(pos: [3]f32, forw: [3]f32, vel: [3]f32 = 0) {

@@ -80,6 +80,7 @@ _init :: proc() -> ^State {
     platform.set_mouse_relative(rv._state.window, true)
     platform.set_mouse_visible(false)
 
+
     state.death_sound = rv.create_sound_resource_encoded("death", #load("../data/snake_death_sound.wav")) or_else panic("load")
     state.berry_sound = rv.create_sound_resource_encoded("berry", #load("../data/snake_powerup_sound.wav")) or_else panic("load")
 
