@@ -147,6 +147,10 @@ get_global_time :: proc() -> u64 {
     return _get_global_time()
 }
 
+get_output_sample_rate :: proc() -> u32 {
+    return _get_output_sample_rate()
+}
+
 // Call every frame from the main thread.
 // Low overhead, audio is in another thread.
 update :: proc() {
@@ -163,6 +167,9 @@ recycle_old_sounds :: proc() {
         }
 
         index := _state.sound_recycle * 64 + i32(i)
+        if index == 0 {
+            continue
+        }
 
         sound := &_state.sounds[index]
 
@@ -172,7 +179,7 @@ recycle_old_sounds :: proc() {
         }
 
         if _is_sound_finished(sound) {
-            // log.info("Recycling sound", handle)
+            base.log(.Info, "Recycling sound %v", handle)
             destr_ok := destroy_sound(handle)
             assert(destr_ok)
         }
@@ -206,6 +213,24 @@ create_resource_encoded :: proc(data: []byte) -> (result: Resource_Handle, ok: b
     resource^ = {}
 
     _init_resource_encoded(resource, result, data) or_return
+
+    base.bit_pool_set_1(&_state.resources_used, index)
+
+    return result, true
+}
+
+create_resource_decoded :: proc(data: []byte, format: Sample_Format, stereo: bool, sample_rate: u32) -> (result: Resource_Handle, ok: bool) {
+    index := base.bit_pool_find_0(_state.resources_used) or_return
+
+    result = {
+        index = Handle_Index(index),
+        gen = _state.resources_gen[index],
+    }
+
+    resource := &_state.resources[index]
+    resource^ = {}
+
+    _init_resource_decoded(resource, result, data = data, format = format, stereo = stereo, sample_rate = sample_rate) or_return
 
     base.bit_pool_set_1(&_state.resources_used, index)
 

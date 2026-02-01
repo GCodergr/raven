@@ -32,6 +32,7 @@ when BACKEND == BACKEND_MINIAUDIO {
         delay:  ma.delay_node,
     }
 
+    @(require_results)
     _init :: proc() -> bool {
         rm_config := ma.resource_manager_config_init()
         rm_config.pVFS = cast(^ma.vfs)&_ma_null_vfs
@@ -62,16 +63,21 @@ when BACKEND == BACKEND_MINIAUDIO {
         return ma.engine_get_time_in_milliseconds(&_state.engine) * 1e6
     }
 
+    _get_output_sample_rate :: proc() -> u32 {
+        return ma.engine_get_sample_rate(_state.engine, &res)
+    }
+
+
     // MARK: Sound
 
-    _load_decoded_sound_data :: proc(
+    _init_resource_decoded :: proc(
         resource:       ^Resource,
         handle:         Resource_Handle,
         data:           []byte,
         format:         Sample_Format,
         stereo:         bool,
         sample_rate:    u32,
-    ) {
+    ) -> bool {
         assert(handle != {})
 
         sample_rate := sample_rate
@@ -84,7 +90,7 @@ when BACKEND == BACKEND_MINIAUDIO {
 
         channels: u32 = stereo ? 2 : 1
 
-        res := ma.resource_manager_register_decoded_data(
+        _ma_check(ma.resource_manager_register_decoded_data(
             manager,
             pName = _ma_handle_cstr(Handle(handle)),
             pData = raw_data(data),
@@ -92,12 +98,9 @@ when BACKEND == BACKEND_MINIAUDIO {
             format = _ma_sample_format(format),
             channels = channels,
             sampleRate = sample_rate,
-        )
+        )) or_return
 
-        if res != .SUCCESS {
-            log.errorf("miniaudio error: {}", res)
-            return
-        }
+        return true
     }
 
     _init_resource_encoded :: proc(resource: ^Resource, handle: Resource_Handle,  data: []byte) -> bool {
