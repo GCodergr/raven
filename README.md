@@ -38,6 +38,7 @@ Inspired by Sokol, PICO8 and Raylib.
 - Lightweight shader transpiler
 - SDL3 platform and GPU backend as a fallback
 - Finish Audio system
+  - Web Audio
 - Better fonts
     - Draw text iterator
     - Unicode font support (currently only CP437 atlases are supported)
@@ -130,8 +131,6 @@ For more detailed information see the source code directly.
 
 ## Engine Structure
 - raven
-  - base - lightweight core utils with no dependencies, used by other packages
-  - build - tool for exporting builds and hot-reloading
   - platform - majority of OS specific code
     - win32
     - js
@@ -140,6 +139,8 @@ For more detailed information see the source code directly.
     - wgpu
   - audio
     - miniaudio
+- base - lightweight core utils with no dependencies, used by other packages
+- build - tool for exporting builds and hot-reloading
 
 ## Cheatsheet
 
@@ -206,4 +207,6 @@ oklerp(a, b: Vec4, t: f32) -> Vec4          // Interpolate colors with OKLAB
 
 # Contributing
 For info about bug reports and contributing, see [CONTRIBUTING](CONTRIBUTING.md)
+
+
 

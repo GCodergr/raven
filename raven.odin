@@ -3074,11 +3074,6 @@ set_layer_params :: proc(
 // MARK: Draw
 //
 
-
-// TODO: anchor
-// TODO: sprite_ex
-// TODO: scaling by pixels or absolute
-// TODO: draw sprite line
 draw_sprite :: proc(
     pos:    Vec3,
     rect:   Rect = {0, 1},
@@ -3122,8 +3117,6 @@ draw_sprite :: proc(
     center := pos
     center += mat[0] * anchor.x * size.x
     center += mat[1] * anchor.y * size.y
-
-    // TODO: flip texture *data* instead of flipping sprites?
 
     rect_size_sign := Vec2{
         math.sign_f32(rect_size.x),
@@ -5058,4 +5051,5 @@ char_to_rune :: proc(ch: u8) -> rune {
     case 254: return '■'
     case 255: return 0x00A0 // non breaking space
     }
+
 }
