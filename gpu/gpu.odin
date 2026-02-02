@@ -715,7 +715,7 @@ create_texture_2d :: proc(
     rw_resource:        bool = false,
     data:               []byte = nil,
 ) -> (result: Resource_Handle, ok: bool) {
-    log.info("Creating texture:", name)
+    log.debug("Creating texture:", name)
 
     validate(format != .Invalid)
     validate(size.x > 0)
@@ -778,7 +778,7 @@ create_buffer :: proc(
     usage:              Usage = .Default,
     data:               []u8 = nil,
 ) -> (result: Resource_Handle, ok: bool) #optional_ok {
-    log.info("Creating texture:", name)
+    log.debug("Creating texture:", name)
 
     size := size
 

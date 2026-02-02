@@ -580,7 +580,7 @@ DEFAULT_SAMPLERS :: [2]gpu.Sampler_Desc{
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// MARK: Base
+// MARK: Core
 //
 
 set_state_ptr :: proc "contextless" (state: ^State) {
@@ -845,8 +845,8 @@ init_state :: proc(allocator := context.allocator) {
     log.info("Initializing platform...")
 
     platform.init(&_state.platform_state)
-    platform.set_dpi_aware()
     _state.start_time = platform.get_time_ns()
+    platform.set_dpi_aware()
 
     log.info("Initializing audio...")
 
@@ -1113,11 +1113,15 @@ _print_stats_report :: proc() {
 begin_frame :: proc() -> (keep_running: bool) {
     assert(_state != nil)
 
-    keep_running = true
-
     free_all(context.temp_allocator)
     // In case big file allocations happened...
     defer free_all(context.temp_allocator)
+
+    if _state.frame_index == 0 {
+        log.infof("Time to first frame: %.3f ms", f32((platform.get_time_ns() - _state.start_time) / 1e3) * 1e-3)
+    }
+
+    keep_running = true
 
     _state.ended_frame = false
 
