@@ -41,6 +41,7 @@ _shutdown :: proc(prev_state: ^State) {
 }
 
 _update :: proc(prev_state: ^State) -> ^State {
+    // This line ensures your global 'state' ptr points to the correct data even after hotreload.
     state = prev_state
 
     if rv.key_pressed(.Escape) {
