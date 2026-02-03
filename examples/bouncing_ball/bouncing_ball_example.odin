@@ -61,6 +61,7 @@ _shutdown :: proc(prev_state: ^State) {
 
 _update :: proc(prev_state: ^State) -> ^State {
     state = prev_state
+
     ball := &state.ball
     screen := rv.get_screen_size()
 

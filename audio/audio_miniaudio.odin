@@ -109,7 +109,7 @@ when BACKEND == BACKEND_MINIAUDIO {
         manager := ma.engine_get_resource_manager(&_state.engine)
 
         path := _ma_handle_cstr(Handle(handle))
-        log.info("init res", handle, path)
+        // log.debug("init res", handle, path)
 
         _ma_check(ma.resource_manager_register_encoded_data(
             manager,

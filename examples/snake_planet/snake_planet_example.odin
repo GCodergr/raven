@@ -91,8 +91,8 @@ _init :: proc() -> ^State {
     return state
 }
 
-_shutdown :: proc(prev: ^State) {
-    free(prev)
+_shutdown :: proc(prev_state: ^State) {
+    free(prev_state)
 }
 
 new_game :: proc() {
@@ -165,7 +165,9 @@ add_snake_segment :: proc() {
     snake.num_segments += 1
 }
 
-_update :: proc(prev: ^State) -> ^State {
+_update :: proc(prev_state: ^State) -> ^State {
+    state = prev_state
+
     if rv.key_pressed(.Escape) {
         return nil
     }
