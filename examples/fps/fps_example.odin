@@ -107,7 +107,7 @@ _update :: proc(prev_state: ^State) -> ^State {
     rv.bind_depth_test(true)
     rv.bind_depth_write(true)
 
-    rv.draw_mesh_by_handle(
+    rv.draw_mesh(
         rv.get_mesh("Cube"),
         state.gun_pos,
         rot = cam_rot,
@@ -115,7 +115,7 @@ _update :: proc(prev_state: ^State) -> ^State {
     )
 
 
-    rv.draw_mesh_by_handle(
+    rv.draw_mesh(
         rv.get_mesh("Plane"),
         {0, 0, 0},
         scale = 25,

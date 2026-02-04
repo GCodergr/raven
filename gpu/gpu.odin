@@ -577,7 +577,7 @@ create_pipeline :: proc(
         return result, true
     }
 
-    log.debugf("Creating pipeline %x", hash)
+    log.debugf("Creating pipeline '%s' %x", name, hash)
 
     state: Pipeline_State
     state.native = _create_pipeline(name, desc) or_return

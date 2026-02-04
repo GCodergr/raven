@@ -259,7 +259,7 @@ when BACKEND == BACKEND_D3D11 {
     }
 
     _create_blend :: proc(descs: [RENDER_TEXTURE_BIND_SLOTS]Blend_Desc) -> (result: _Blend) {
-        log.debug("GPU: Creating D3D11 blend state")
+        log.debug("GPU: Creating D3D11 blend state", descs)
 
         if descs == {} {
             return {}
@@ -271,9 +271,7 @@ when BACKEND == BACKEND_D3D11 {
         }
 
         for desc, i in descs {
-            if desc != {} {
-                blend_desc.RenderTarget[i] = _d3d11_blend_desc(desc)
-            }
+            blend_desc.RenderTarget[i] = _d3d11_blend_desc(desc)
         }
 
         _d3d11_check(_state.device->CreateBlendState(&blend_desc, &result.bs))
@@ -1076,14 +1074,12 @@ when BACKEND == BACKEND_D3D11 {
             _set_index_buffer(res, curr.index.format, curr.index.offset)
         }
 
-        if curr.blends != prev.blends {
-            // if curr.blends == {} {
-            //     _set_blend({})
-            // } else {
-                bucket := &_state.blend_cache
-                blend := bucket_find_or_create(bucket, curr.blends, _create_blend)
-                _set_blend(blend)
-            // }
+        if curr.blends == {} {
+            _set_blend({})
+        } else if curr.blends != prev.blends {
+            bucket := &_state.blend_cache
+            blend := bucket_find_or_create(bucket, curr.blends, _create_blend)
+            _set_blend(blend)
         }
 
         if curr.cull != prev.cull || curr.fill != prev.fill || curr.depth_bias != prev.depth_bias {

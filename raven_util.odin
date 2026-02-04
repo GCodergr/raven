@@ -138,6 +138,21 @@ luminance :: proc "contextless" (rgb: Vec3) -> f32 {
     return linalg.dot(rgb, Vec3{0.2126, 0.7152, 0.0722})
 }
 
+floor :: proc {
+    floor_f32,
+    floor_vec,
+}
+
+@(require_results)
+floor_vec :: proc (x: [$N]f32) -> [N]f32 where N <= 4 {
+    return transmute([N]f32)intrinsics.simd_floor(transmute(#simd[N]f32)x)
+}
+
+@(require_results)
+floor_f32 :: proc (x: f32) -> f32 {
+    return transmute(f32)intrinsics.simd_floor(transmute(#simd[1]f32)x)
+}
+
 // RGB only!
 @(require_results)
 hex_color :: proc "contextless" (hex: u32) -> Vec4 {

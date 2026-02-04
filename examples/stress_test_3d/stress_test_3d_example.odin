@@ -170,7 +170,7 @@ _update :: proc(prev_state: ^State) -> ^State {
 
 stress_draw :: proc(handle: rv.Mesh_Handle, pos: rv.Vec3, num: int = 64, col: rv.Vec4 = {1, 1, 1, 0.25}) {
     for i in 0..<num {
-        rv.draw_mesh_by_handle(handle,
+        rv.draw_mesh(handle,
             pos = pos + {0, 0, f32(i) * 3},
             rot = rv.quat_angle_axis(f32(i) * 0.1 + rv.get_time(), {0, 0, 1}),
             col = col,

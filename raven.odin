@@ -39,6 +39,7 @@ import "base/ufmt"
 // TODO: default module init/shutdown procs
 // TODO: load_* vs create_*, insert_* naming convention, and resource management naming in general
 // TODO: DXT texture compression
+// TODO: triangle drawing with a dynamic mesh?
 
 RELEASE :: #config(RAVEN_RELEASE, false)
 VALIDATION :: #config(RAVEN_VALIDATION, !RELEASE)
@@ -418,6 +419,7 @@ Draw_Layer :: struct {
 
     // NOTE: the dynamic arrays must be allocated with temp_allocator.
     // Beware of the default append() behavior.
+    // TODO: binning, opaque and additive don't care.
 
     sprites:                #soa[dynamic]Sprite_Draw,
     meshes:                 #soa[dynamic]Mesh_Draw,
@@ -477,9 +479,6 @@ Sprite_Draw :: struct #all_or_none {
 Mesh_Draw :: struct #all_or_none {
     key:    Draw_Sort_Key,
     inst:   Mesh_Inst,
-    extra:  struct {
-        index:  u16,
-    },
 }
 
 Triangle_Draw :: struct #all_or_none {
@@ -532,22 +531,24 @@ Mesh_Inst :: struct #all_or_none #align(16) {
 DRAW_SORT_DIST_BITS :: 14
 MAX_DRAW_SORT_KEY_DIST :: (1 << DRAW_SORT_DIST_BITS) - 1
 
+// Must be an integer.
+Draw_Sort_Key_Backing :: u64
+
 // NOTE: the sort distance could be packed in fewer bits.
-// HACK: TODO: u128 is stupid. This entire structure needs to be smaller.
 // Order of batches is defined bottom-up by these fields.
-Draw_Sort_Key :: bit_field u128 {
-    texture:        u8 | 8,
-    texture_mode:   Bind_Texture_Mode | 2,
-    dist:           u16 | DRAW_SORT_DIST_BITS,
-    fill:           Fill_Mode | 2,
-    depth_write:    bool | 1,
-    depth_test:     bool | 1,
-    group:          u8 | 6,
-    ps:             u8 | 6,
-    vs:             u8 | 6,
-    index_num:      u16 | 16,
-    index_offs:     u32 | 32,
-    blend:          Blend_Mode | 2,
+Draw_Sort_Key :: bit_field Draw_Sort_Key_Backing {
+    texture:        u8                  | 8,
+    texture_mode:   Bind_Texture_Mode   | 2,
+    dist:           u16                 | DRAW_SORT_DIST_BITS,
+    fill:           Fill_Mode           | 2,
+    depth_write:    bool                | 1,
+    depth_test:     bool                | 1,
+    group:          u8                  | 6,
+    ps:             u8                  | 6,
+    vs:             u8                  | 6,
+    // usage depends on the drawcall type, in mesh case it's the mesh index.
+    asset_index:    u16                 | 16,
+    blend:          Blend_Mode          | 2,
 }
 
 draw_sort_key_equal :: proc(key_a, key_b: Draw_Sort_Key) -> bool {
@@ -3145,9 +3146,6 @@ draw_sprite_inst :: proc(inst: Sprite_Inst) {
         fill            = _state.bind_state.fill,
         depth_test      = _state.bind_state.depth_test,
         depth_write     = _state.bind_state.depth_write,
-        index_num       = 0,
-        group           = 0,
-        dist            = 0,
     }
 
     _push_sprite_draw(_state.bind_state.draw_layer, draw)
@@ -3255,7 +3253,7 @@ text_glyph_apply :: proc(offs: Vec2, r: rune, scale: Vec2, char_size: IVec2 = 8,
     return offs
 }
 
-draw_mesh_by_handle :: proc(
+draw_mesh :: proc(
     handle:     Mesh_Handle,
     pos:        Vec3,
     rot:        Quat = 1,
@@ -3279,8 +3277,7 @@ draw_mesh_by_handle :: proc(
     mat := linalg.matrix3_from_quaternion_f32(rot)
 
     draw.key = {
-        index_num       = u16(mesh.index_num),
-        index_offs      = u32(mesh.index_offs),
+        asset_index     = u16(handle.index),
         group           = u8(mesh.group.index),
         texture         = _state.bind_state.texture,
         texture_mode    = _state.bind_state.texture_mode,
@@ -3315,10 +3312,6 @@ draw_mesh_by_handle :: proc(
         vert_offs = u32(mesh.vert_offs),
         _pad0 = 0,
         param = param,
-    }
-
-    draw.extra = {
-        index = handle.index,
     }
 
     _push_mesh_draw(_state.bind_state.draw_layer, draw)
@@ -3372,9 +3365,6 @@ draw_sprite_line :: proc(
         fill            = _state.bind_state.fill,
         depth_test      = _state.bind_state.depth_test,
         depth_write     = _state.bind_state.depth_write,
-        index_num       = 0,
-        group           = 0,
-        dist            = 0,
     }
 
     _push_sprite_draw(_state.bind_state.draw_layer, draw)
@@ -3393,7 +3383,6 @@ draw_triangle :: proc(
     draw: Triangle_Draw
 
     draw.key = {
-        index_num       = 0,
         group           = 0,
         texture         = _state.bind_state.texture,
         texture_mode    = _state.bind_state.texture_mode,
@@ -3579,8 +3568,7 @@ upload_gpu_layers :: proc() {
         if .No_Reorder not_in layer.flags {
             keys := layer.sprites.key[:len(layer.sprites)]
 
-            #assert(size_of(Draw_Sort_Key) == size_of(u128))
-            indices := slice.sort_with_indices(transmute([]u128)keys, context.temp_allocator)
+            indices := slice.sort_with_indices(transmute([]Draw_Sort_Key_Backing)keys, context.temp_allocator)
             slice.sort_from_permutation_indices(instances, indices)
         }
 
@@ -3655,9 +3643,8 @@ upload_gpu_layers :: proc() {
             for mesh_index := len(layer.meshes) - 1; mesh_index >= 0; mesh_index -= 1 {
                 inst := layer.meshes.inst[mesh_index]
                 key := &layer.meshes.key[mesh_index]
-                extra := layer.meshes.extra[mesh_index]
 
-                mesh := _state.meshes[extra.index]
+                mesh := _state.meshes[key.asset_index]
 
                 box_rad :=
                     (linalg.abs(inst.mat_x) * max(abs(mesh.bounds_min.x), abs(mesh.bounds_max.x))) +
@@ -3681,8 +3668,7 @@ upload_gpu_layers :: proc() {
 
         if .No_Reorder not_in layer.flags {
             keys := layer.meshes.key[:len(layer.meshes)]
-            #assert(size_of(Draw_Sort_Key) == size_of(u128))
-            indices := slice.sort_with_indices(transmute([]u128)keys, context.temp_allocator)
+            indices := slice.sort_with_indices(transmute([]Draw_Sort_Key_Backing)keys, context.temp_allocator)
             slice.sort_from_permutation_indices(instances, indices)
         }
 
@@ -4032,10 +4018,12 @@ render_gpu_layer :: proc(
 
         _counter_add(.Num_Draw_Calls, 1)
 
+        mesh := _state.meshes[batch.key.asset_index]
+
         gpu.draw_indexed(
-            index_num = batch.key.index_num,
+            index_num = mesh.index_num,
             instance_num = batch.num,
-            index_offset = batch.key.index_offs,
+            index_offset = mesh.index_offs,
             const_offsets = {
                 0 = max(u32),
                 1 = u32(index),

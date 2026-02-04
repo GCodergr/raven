@@ -89,11 +89,11 @@ _update :: proc(prev_state: ^State) -> ^State {
     if rv.scope_binds() {
         rv.bind_texture("default")
 
-        rv.draw_mesh_by_handle(rv.get_mesh("Circle"), {-3, 0, 0}, col = rv.YELLOW)
-        rv.draw_mesh_by_handle(rv.get_mesh("Plane"), {0, 0, 0}, col = rv.GREEN)
-        rv.draw_mesh_by_handle(rv.get_mesh("Cube"), {3, 0, 0}, rv.quat_angle_axis(rv.get_time(), {0, 1, 0}))
-        rv.draw_mesh_by_handle(rv.get_mesh("Icosphere"), {6, 0, 0}, col = rv.CYAN)
-        rv.draw_mesh_by_handle(rv.get_mesh("Cylinder"), {9, 0, 0}, scale = {1, 0.1 + rv.nsin(rv.get_time() * 0.5), 1}, col = rv.GRAY)
+        rv.draw_mesh(rv.get_mesh("Circle"), {-3, 0, 0}, col = rv.YELLOW)
+        rv.draw_mesh(rv.get_mesh("Plane"), {0, 0, 0}, col = rv.GREEN)
+        rv.draw_mesh(rv.get_mesh("Cube"), {3, 0, 0}, rv.quat_angle_axis(rv.get_time(), {0, 1, 0}))
+        rv.draw_mesh(rv.get_mesh("Icosphere"), {6, 0, 0}, col = rv.CYAN)
+        rv.draw_mesh(rv.get_mesh("Cylinder"), {9, 0, 0}, scale = {1, 0.1 + rv.nsin(rv.get_time() * 0.5), 1}, col = rv.GRAY)
 
         rv.draw_triangle(
             pos = {

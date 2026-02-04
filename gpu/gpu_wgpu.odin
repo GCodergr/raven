@@ -478,7 +478,7 @@ when BACKEND == BACKEND_WGPU {
     }
 
     _create_pipeline :: proc(name: string, desc: Pipeline_Desc) -> (result: _Pipeline, ok: bool) {
-        log.debugf("GPU: Creating WebGPU pipeline '%s'", name)
+        // log.debugf("GPU: Creating WebGPU pipeline '%s'", name)
 
         bind_group, bind_group_handle, bind_group_ok := _get_or_create_bind_group(desc.bindings)
         if !bind_group_ok {

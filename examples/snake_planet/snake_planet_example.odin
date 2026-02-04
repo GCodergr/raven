@@ -286,23 +286,23 @@ _update :: proc(prev_state: ^State) -> ^State {
 
         sph := rv.get_mesh("Icosphere")
 
-        rv.draw_mesh_by_handle(sph, 0, col = rv.Vec4{0.0, 0.6, 0.2, 1})
+        rv.draw_mesh(sph, 0, col = rv.Vec4{0.0, 0.6, 0.2, 1})
 
         rv.bind_texture("white")
 
-        rv.draw_mesh_by_handle(sph, snake.pos, scale = 0.15, col = rv.ORANGE + rv.YELLOW * 0.1)
+        rv.draw_mesh(sph, snake.pos, scale = 0.15, col = rv.ORANGE + rv.YELLOW * 0.1)
         for seg, i in snake.segments[:snake.num_segments] {
-            rv.draw_mesh_by_handle(sph,
+            rv.draw_mesh(sph,
                 seg.pos * (1.0 + 0.025 * rv.nsin(f32(i) * 0.21 - rv.get_time())),
                 scale = 0.15, col = i % 2 == 0 ? SNAKE_RED : SNAKE_ORANGE)
         }
 
         for obst in state.obsts[:state.num_obsts] {
-            rv.draw_mesh_by_handle(sph, obst.pos, scale = obst.rad, col = rv.Vec4{0.0, 0.6, 0.2, 1})
-            rv.draw_mesh_by_handle(sph, obst.pos * 1.1, scale = obst.rad * 1.2, col = rv.Vec4{0.2, 0.7, 0.3, 1})
+            rv.draw_mesh(sph, obst.pos, scale = obst.rad, col = rv.Vec4{0.0, 0.6, 0.2, 1})
+            rv.draw_mesh(sph, obst.pos * 1.1, scale = obst.rad * 1.2, col = rv.Vec4{0.2, 0.7, 0.3, 1})
         }
 
-        rv.draw_mesh_by_handle(sph, state.berry.pos * 1.1, scale = 0.2 + 0.05 * rv.nsin(rv.get_time() * 2), col = rv.RED)
+        rv.draw_mesh(sph, state.berry.pos * 1.1, scale = 0.2 + 0.05 * rv.nsin(rv.get_time() * 2), col = rv.RED)
     }
 
     rv.bind_layer(1)
@@ -346,6 +346,7 @@ _update :: proc(prev_state: ^State) -> ^State {
             col = SNAKE_ORANGE,
         )
 
+        // Animate individual characters
         for &inst, i in char_sprites {
             inst.pos.y += math.sin_f32(f32(i) * 0.7334 + rv.get_time()) * 10
             if i % 2 == 0 {
