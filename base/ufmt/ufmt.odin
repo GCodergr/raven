@@ -1,14 +1,23 @@
-// Micro-fmt
-//
-// Extremely stripped down `core:fmt` replacement.
-// Supports only %s, %f, %i, %x, %%
-// NOTE: curly braces don't need to be doubled ({{ and }}) like in `core:fmt`
-//
-// By Jakub Tomšů
-// Read https://jakubtomsu.github.io/posts/odin_comp_speed/ for more info.
+/*
+Micro-fmt
+
+Extremely stripped down `core:fmt` replacement.
+
+Supports only the following qualifiers:
+- %s: strings
+- %f: floats with 3 decimal places
+- %i: integers
+- %x: integers, pointers or floats
+- %%: literal percentage sign
+- %v: any value, RTTI will be used for printing.
+
+NOTE: curly braces don't need to be doubled ({{ and }}) like in `core:fmt`
+
+By Jakub Tomšů
+Read https://jakubtomsu.github.io/posts/odin_comp_speed/ for more info.
+*/
 package ufmt
 
-import "core:fmt"
 import "base:runtime"
 
 INDENT :: "  "
@@ -89,6 +98,9 @@ tprintf :: proc(format: string, args: ..any) -> string {
             case i64:   _append_hex(&buf,      cast(u64)val, size_of(val))
             case uint:  _append_hex(&buf,      cast(u64)val, size_of(val))
             case int:   _append_hex(&buf,      cast(u64)val, size_of(val))
+            case f16:   _append_hex(&buf, u64(transmute(u16)val), size_of(val))
+            case f32:   _append_hex(&buf, u64(transmute(u32)val), size_of(val))
+            case f64:   _append_hex(&buf, transmute(u64)val, size_of(val))
             case: return "<NOT INT>"
             }
 
@@ -218,12 +230,9 @@ _append_float :: proc(buf: ^[dynamic]byte, value: f64) {
     append_elem(buf, byte('0' + int(fp / 1  ) % 10))
 }
 
-// TODO: support very simple RTTI traversal
-
 _is_type_simple :: proc(ti: ^runtime.Type_Info) -> bool {
     base := runtime.type_info_base(ti)
     #partial switch v in base.variant {
-    case runtime.Type_Info_Named:
     case runtime.Type_Info_Integer,
         runtime.Type_Info_Float,
         runtime.Type_Info_Rune,
@@ -241,6 +250,7 @@ _extract_int :: proc(ptr: rawptr, size: int) -> u64 {
     case 2: return u64((cast(^u16)ptr)^)
     case 4: return u64((cast(^u32)ptr)^)
     case 8: return (cast(^u64)ptr)^
+    case 16: return u64((cast(^u128)ptr)^)
     }
     panic("Integer size not supported")
 }
@@ -254,7 +264,11 @@ _append_indent :: proc(buf: ^[dynamic]byte, num: int) {
 
 _append_slice :: proc(buf: ^[dynamic]byte, data: rawptr, len: int, stride: int, elem_id: typeid, pretty: bool, depth: int) {
     multiline := pretty
-    if len <= 4 || _is_type_simple(type_info_of(elem_id)) {
+    if len <= 4 && _is_type_simple(type_info_of(elem_id)) {
+        multiline = false
+    }
+
+    if len == 0 {
         multiline = false
     }
 
@@ -313,6 +327,9 @@ _append_any :: proc(buf: ^[dynamic]byte, value: any, nested := false, pretty := 
     ti := type_info_of(value.id)
 
     switch v in ti.variant {
+    case runtime.Type_Info_Named:
+        _append_any(buf, any({data = value.data, id = v.base.id}), nested, pretty, depth)
+
     case runtime.Type_Info_Integer, runtime.Type_Info_Rune, runtime.Type_Info_Float, runtime.Type_Info_String:
         unreachable()
 
@@ -321,13 +338,53 @@ _append_any :: proc(buf: ^[dynamic]byte, value: any, nested := false, pretty := 
          runtime.Type_Info_Procedure:
         _append_hex(buf, u64((cast(^uintptr)value.data)^), size_of(uintptr))
 
-    case runtime.Type_Info_Boolean: unimplemented()
+    case runtime.Type_Info_Boolean:
+        val := _extract_int(value.data, ti.size)
+        _append_string(buf, val == 0 ? "false" : "true")
 
-    case runtime.Type_Info_Complex: unimplemented()
-    case runtime.Type_Info_Quaternion: unimplemented()
+    case runtime.Type_Info_Complex:
+        val: [2]f64
+        switch ti.size {
+        case 4:
+            raw := (transmute(^runtime.Raw_Complex32)value.data)^
+            val = {f64(raw.real), f64(raw.imag)}
+        case 8:
+            raw := (transmute(^runtime.Raw_Complex64)value.data)^
+            val = {f64(raw.real), f64(raw.imag)}
+        case 16:
+            val = (transmute(^[2]f64)value.data)^
+        case:
+            _append_string(buf, "<INVALID COMPLEX>")
+        }
+        _append_float(buf, val[0])
+        _append_string(buf, " + ")
+        _append_float(buf, val[1])
+        _append_string(buf, "i")
 
-    case runtime.Type_Info_Named:
-        _append_any(buf, any({data = value.data, id = v.base.id}), nested, pretty, depth)
+    case runtime.Type_Info_Quaternion:
+        val: [4]f64
+        switch ti.size {
+        case 8:
+            raw := (transmute(^[4]f16)value.data)^
+            val = {f64(raw.x), f64(raw.y), f64(raw.z), f64(raw.w)}
+        case 16:
+            raw := (transmute(^[4]f32)value.data)^
+            val = {f64(raw.x), f64(raw.y), f64(raw.z), f64(raw.w)}
+        case 32:
+            val = (transmute(^[4]f64)value.data)^
+        case:
+            _append_string(buf, "<INVALID COMPLEX>")
+        }
+        _append_string(buf, "{")
+        _append_float(buf, val[0])
+        _append_string(buf, ", ")
+        _append_float(buf, val[1])
+        _append_string(buf, ", ")
+        _append_float(buf, val[2])
+        _append_string(buf, ", ")
+        _append_float(buf, val[3])
+        _append_string(buf, "}")
+
 
     case runtime.Type_Info_Struct:
         multiline := pretty
@@ -376,7 +433,7 @@ _append_any :: proc(buf: ^[dynamic]byte, value: any, nested := false, pretty := 
         append_elem(buf, '}')
 
     case runtime.Type_Info_Bit_Field:
-
+        unimplemented()
 
     case runtime.Type_Info_Enum:
         _ = v.base.variant.(runtime.Type_Info_Integer)
@@ -481,15 +538,16 @@ _append_any :: proc(buf: ^[dynamic]byte, value: any, nested := false, pretty := 
         case runtime.Type_Info_Named:
             append_elem_string(buf, vt.name)
         case:
-            append_elem_string(buf, "typeid")
             // TODO
+            append_elem_string(buf, "typeid")
         }
 
     case runtime.Type_Info_Union: unimplemented()
     case runtime.Type_Info_Map: unimplemented()
     case runtime.Type_Info_Matrix: unimplemented()
 
-    case runtime.Type_Info_Soa_Pointer: unimplemented()
+    case runtime.Type_Info_Soa_Pointer:
+        unimplemented()
 
     case runtime.Type_Info_Parameters:
         unreachable()

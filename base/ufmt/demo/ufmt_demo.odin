@@ -15,6 +15,9 @@ Foo :: struct {
     data2:      [2]byte,
     dyn:        [dynamic]f32,
     type:       typeid,
+    cond:       bool,
+    signal:     complex64,
+    rotation:   quaternion128,
 }
 
 Flag :: enum u16 {
@@ -30,7 +33,8 @@ Simple :: struct {
 }
 
 main :: proc() {
-    foo: Foo = {
+    foo: [2]Foo
+    foo[0] = {
         a = 123,
         b = -1.3,
         ptr = rawptr(uintptr(0xffff)),
@@ -46,12 +50,15 @@ main :: proc() {
             123, 0, 22, 33, 0, 1,
         },
         data2 = {1, 2},
+        cond = true,
+        signal = 1 + 2i,
         type = typeid_of(Simple),
+        rotation = 1,
     }
 
-    append(&foo.dyn, 1.1)
-    append(&foo.dyn, 1.2)
-    append(&foo.dyn, 1.3)
+    append(&foo[1].dyn, 1.1)
+    append(&foo[1].dyn, 1.2)
+    append(&foo[1].dyn, 1.3)
 
     ufmt.eprintfln("%#", foo)
 }
