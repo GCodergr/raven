@@ -112,7 +112,6 @@ _update :: proc(prev_state: ^State) -> ^State {
     }
 
     solid := rv.font_slot(0)
-    rv.bind_sprite_scaling(.Absolute)
 
     for i in 0..<64 {
         block_full := (state.pool.l0[0] & (1 << uint(i))) != 0
@@ -133,6 +132,7 @@ _update :: proc(prev_state: ^State) -> ^State {
             solid,
             scale = {32, 32},
             col = block_full ? rv.RED : rv.BLACK,
+            scaling = .Absolute,
         )
 
         for i_local in 0..<64 {
@@ -149,14 +149,13 @@ _update :: proc(prev_state: ^State) -> ^State {
                     local_pos,
                     solid,
                     scale = {2, 2},
+                    scaling = .Absolute,
                 )
             }
 
             // rv.draw_sprite()
         }
     }
-
-    rv.bind_sprite_scaling(.Pixel)
 
     rv.draw_text("LMB to spawn particles", {10, 10, 0}, scale = 2)
 
