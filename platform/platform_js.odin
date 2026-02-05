@@ -413,6 +413,7 @@ _js_unsupported :: proc(loc := #caller_location) {
 }
 
 _js_mouse_button :: proc(index: i16) -> Mouse_Button {
+    // https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/button
     switch index {
     case 0: return .Left // Main button, usually the left button or the un-initialized state
     case 1: return .Middle // Auxiliary button, usually the wheel button or the middle button (if present)
@@ -425,6 +426,8 @@ _js_mouse_button :: proc(index: i16) -> Mouse_Button {
 }
 
 _js_key_code :: proc(str: string) -> Key {
+    // https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent
+    // https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/code
     // TODO: first match prefix for faster lookups?
     switch str {
     case "ArrowLeft":       return .Left
