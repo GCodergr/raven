@@ -33,27 +33,31 @@ struct Vertex {
     pos    : vec3<f32>,
     uv     : vec2<f32>,
     normal : u32,
-    color  : u32,
+    col    : u32,
 };
 
 struct Sprite_Inst {
-    pos       : vec3<f32>,
-    color     : u32,
-    mat_x     : vec3<f32>,
-    uv_min_x  : f32,
-    mat_y     : vec3<f32>,
-    uv_min_y  : f32,
-    uv_size   : vec2<f32>,
-    tex_slice : u32,
+    pos: vec3<f32>,
+    col: u32,
+    mat_x: vec3<f32>,
+    uv_min: u32,
+    mat_y: vec3<f32>,
+    uv_size: u32,
+    add_col: u32,
+    param: u32,
+    tex_slice: u32,
+    _pad0: u32,
 };
 
 struct Mesh_Inst {
-    pos       : vec3<f32>,
-    mat       : mat3x3<f32>,
-    color     : u32,
-    vert_offs : u32,
-    tex_slice : u32,
-    param     : u32,
+    pos: vec3<f32>,
+    col: u32,
+    mat_x: vec3<f32>,
+    add_col: u32,
+    mat_y: vec3<f32>,
+    tex_slice_vert_offs: u32,
+    mat_z: vec3<f32>,
+    param: u32,
 };
 
 struct VS_Out {
@@ -61,8 +65,9 @@ struct VS_Out {
     @location(0) world_pos : vec3<f32>,
     @location(1) normal    : vec3<f32>,
     @location(2) uv        : vec2<f32>,
-    @location(3) color     : vec4<f32>,
-    @location(4)  @interpolate(flat) tex_slice : u32,
+    @location(3) col       : vec4<f32>,
+    @location(4) add_col   : vec4<f32>,
+    @location(5)  @interpolate(flat) tex_slice : u32,
 };
 
 fn unpack_unorm8(val : u32) -> vec4<f32> {
@@ -79,4 +84,13 @@ fn unpack_unorm16(val : u32) -> vec2<f32> {
         f32((val      ) & 0xFFFFu),
         f32((val >> 16) & 0xFFFFu),
     ) * (1.0 / 65535.0);
+}
+
+
+fn unpack_signed_color_unorm8(val : u32) -> vec4<f32> {
+    return unpack_unorm8(val) * 4.0f - 2.0f;
+}
+
+fn unpack_uv_unorm16(val : u32) -> vec2<f32> {
+    return unpack_unorm16(val) * 16.0f - 8.0f;
 }
