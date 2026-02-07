@@ -156,6 +156,9 @@ _update :: proc(prev_state: ^State) -> ^State {
 
     state.pos += state.vel * delta
 
+    ground_height = sample_terrain(state.pos.xz)
+    grounded = state.pos.y <= (ground_height + 1)
+
     if grounded {
         state.pos.y = ground_height + 0.9999
         state.vel = rv.lexp(state.vel, 0, delta * 8)
@@ -214,7 +217,6 @@ read_terrain :: proc(coord: [2]i32) -> f32 {
     return f32(state.terrain[clamp(coord.x, 0, TERRAIN_SIZE - 1)][clamp(coord.y, 0, TERRAIN_SIZE - 1)])
 }
 
-// bilinear interpolation
 sample_terrain :: proc(pos: rv.Vec2) -> f32 {
     p := pos * (1.0 / TERRAIN_SCALE)
     fcoord := rv.floor(p)
@@ -231,10 +233,15 @@ sample_terrain :: proc(pos: rv.Vec2) -> f32 {
         read_terrain(coord + {0, 1}),
         read_terrain(coord + {1, 1}),
     }
-
-    return rv.lerp(
-        rv.lerp(samples[0], samples[1], sub.x),
-        rv.lerp(samples[2], samples[3], sub.x),
-        sub.y,
-    )
+    
+    // triangle check
+    if sub.x + sub.y <= 1.0 {
+        // interpolating within bottom left triangle
+        return samples[0] + sub.x * (samples[1] - samples[0]) + sub.y * (samples[2] - samples[0])
+    }
+    else {
+        // interpolating within upper right triangle
+        sub = rv.Vec2{1.0, 1.0} - sub
+        return samples[3] + sub.x * (samples[2] - samples[3]) + sub.y * (samples[1] - samples[3])
+    }
 }
