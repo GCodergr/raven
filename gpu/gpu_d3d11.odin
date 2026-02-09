@@ -420,7 +420,7 @@ when BACKEND == BACKEND_D3D11 {
         if res != 0 {
             if errors != nil {
                 str := string((cast([^]u8)errors->GetBufferPointer())[:errors->GetBufferSize()])
-                base.log_err("Shader compile error:\n{}", str)
+                base.log_err("Shader compile error:\n%s", str)
             }
             return {}, false
         }

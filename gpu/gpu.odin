@@ -671,6 +671,10 @@ create_shader :: proc(
 
 // Resources
 
+get_swapchain :: proc() -> (result: Resource_Handle) {
+    return _state.swapchain_res
+}
+
 // This creates or re-creates the swapchain if already exists.
 update_swapchain :: proc(window: rawptr, size: [2]i32) -> (result: Resource_Handle, ok: bool) {
     validate(size.x > 0, "Swapchain must be non-zero width")
