@@ -2,7 +2,7 @@
 #+vet explicit-allocators shadowing unused
 package rscn
 
-import "core:log"
+import "../base"
 import "core:strings"
 import "core:strconv"
 
@@ -126,7 +126,7 @@ make_parser :: proc(data: string) -> (result: Parser) {
 
 parse_header :: proc(p: ^Parser) -> (result: Header, err: Error) {
     if len(p.iter) < 5 {
-        log.error("rscn: file is too short to be valid")
+        base.log_err("rscn: file is too short to be valid")
         return {}, .Error
     }
 
@@ -137,7 +137,7 @@ parse_header :: proc(p: ^Parser) -> (result: Header, err: Error) {
         p.iter[2] != 'c' ||
         p.iter[3] != 'n'
     {
-        log.errorf("rscn: header magic mismatch: '%s'", p.iter[:4])
+        base.log_err("rscn: header magic mismatch: '%s'", p.iter[:4])
         return {}, .Error
     }
 
@@ -164,7 +164,7 @@ parse_header :: proc(p: ^Parser) -> (result: Header, err: Error) {
         }
 
         if len(line) < 4 {
-            log.error("rscn: invalid header entry")
+            base.log_err("rscn: invalid header entry")
             return {}, .Error
         }
 
@@ -192,13 +192,13 @@ parse_header :: proc(p: ^Parser) -> (result: Header, err: Error) {
         case "obj ": result.object_num = _parse_int(&line) or_return
 
         case:
-            log.errorf("rscn: Unknown header field '{}'", line[:3])
+            base.log_err("rscn: Unknown header field '%v'", line[:3])
             return {}, .Error
         }
     }
 
     if result.version_major != VERSION_MAJOR || result.version_minor != VERSION_MINOR {
-        log.error("rscn: version mismatch")
+        base.log_err("rscn: version mismatch")
         return {}, .Error
     }
 
@@ -212,7 +212,7 @@ parse_next_elem :: proc(p: ^Parser) -> (result: Elem, err: Error) {
             return {}, .End
         }
 
-        // log.info("line", line)
+        // base.log_info("line %v", line)
 
         if len(line) == 0 {
             continue
@@ -370,7 +370,7 @@ _parse_ident :: proc(line: ^string) -> (string, Error) {
             line^ = line[i:]
             return ident, .OK
         case:
-            log.error("Found invalid identifier character")
+            base.log_err("Found invalid identifier character")
             _strict_error()
             return "", .Error
         }

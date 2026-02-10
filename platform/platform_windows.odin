@@ -196,11 +196,6 @@ when BACKEND == BACKEND_WINDOWS {
     }
 
     _set_mouse_relative :: proc(window: Window, relative: bool) {
-        if relative == _state.mouse_relative {
-            return
-        }
-
-        _state.mouse_relative = relative
         if relative {
             rect := get_window_frame_rect(window)
             set_mouse_pos_window_relative(window, rect.size / 2)

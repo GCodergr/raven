@@ -9,9 +9,8 @@ import "rscn"
 import "audio"
 
 import "core:mem"
-import "core:log"
+import "core:bytes"
 import "base:intrinsics"
-import "core:strings"
 import "core:slice"
 import "core:path/filepath"
 import "core:math/linalg"
@@ -258,7 +257,6 @@ State :: struct #align(64) {
 }
 
 Context_State :: struct {
-    logger:     log.File_Console_Logger_Data, // TODO: replace by custom
     tracking:   mem.Tracking_Allocator,
 }
 
@@ -766,8 +764,8 @@ get_context :: proc "contextless" () -> (result: runtime.Context) {
     }
 
     result.logger = runtime.Logger{
-        procedure = log.console_logger_proc,
-        data = &_state.context_state.logger,
+        procedure = base._logger_proc,
+        data = nil,
         lowest_level = .Debug,
         options = {.Level, .Time, .Short_File_Path, .Line, .Procedure, .Terminal_Color},
     }
@@ -776,11 +774,6 @@ get_context :: proc "contextless" () -> (result: runtime.Context) {
 }
 
 init_context_state :: proc(ctx: ^Context_State) {
-    _state.context_state.logger = {
-        file_handle = auto_cast(~uintptr(0)),
-        ident = "",
-    }
-
     mem.tracking_allocator_init(&_state.context_state.tracking, context.allocator, context.allocator)
 
     debug_trace.init(&_state.debug_trace_ctx)
@@ -1448,7 +1441,7 @@ get_viewport :: proc() -> [3]f32 {
 //
 
 load_scene :: proc(name: string, dst_group: Group_Handle) -> (result_group: Group_Handle, ok: bool) {
-    bin_name := strings.concatenate({name, ".bin"}, context.temp_allocator)
+    bin_name := strings_join(name, ".bin", allocator = context.temp_allocator)
     txt_data := get_file_by_name(name) or_return
     bin_data := get_file_by_name(bin_name) or_return
 
@@ -2526,7 +2519,7 @@ create_texture_from_data :: proc(name: string, data: Texture_Data) -> (result: T
 
 
 
-        res, res_ok := gpu.create_texture_2d(strings.concatenate({"rv-tex-", name}, context.temp_allocator),
+        res, res_ok := gpu.create_texture_2d(strings_join("rv-tex-", name, allocator = context.temp_allocator),
             format = .RGBA_U8_Norm,
             size = data.size,
             usage = .Immutable,
@@ -2661,7 +2654,7 @@ load_asset_directory :: proc(path: string, watch := false) {
         base.log_err("Cannot load data, '%s' is not a valid directory path", path)
     }
 
-    pattern := strings.concatenate({path, "\\*"}, context.temp_allocator)
+    pattern := strings_join(path, "\\*", allocator = context.temp_allocator)
 
     files := make([dynamic]string, 0, 64, context.temp_allocator)
 
@@ -2732,7 +2725,7 @@ load_constant_asset_directory :: proc(files: []runtime.Load_Directory_File) -> (
 }
 
 load_asset :: proc(name: string, dst_group: Group_Handle) -> bool {
-    if strings.has_suffix(name, ".png") {
+    if string_has_suffix(name, ".png") {
         data, data_ok := get_file_by_name(name)
         if !data_ok {
             base.log_err("Failed to load texture '%s', file not found", name)
@@ -2740,13 +2733,13 @@ load_asset :: proc(name: string, dst_group: Group_Handle) -> bool {
         }
         _, ok := create_texture_from_encoded_data(name[:len(name) - 4], data)
         return ok
-    } else if strings.has_suffix(name, ".rscn") {
+    } else if string_has_suffix(name, ".rscn") {
         _, ok := load_scene(name, dst_group = dst_group)
         return ok
     }
     // TODO
-    // else if strings.has_suffix(name, ".wav") {
-    // } else if strings.has_suffix(name, ".hlsl") {
+    // else if string_has_suffix(name, ".wav") {
+    // } else if string_has_suffix(name, ".hlsl") {
     // }
 
     return true
@@ -2883,7 +2876,6 @@ _destroy_render_texture :: proc(tex: ^Render_Texture) {
 //     assert(handle.index != DEFAULT_RENDER_TEXTURE.index)
 //     _, tex_ok := get_internal_render_texture(handle)
 //     if !tex_ok {
-//         log.warn("Trying to resize invalid render texture")
 //         return
 //     }
 // }
@@ -4492,11 +4484,37 @@ log_internal :: proc(format: string, args: ..any, loc := #caller_location) {
 // foo/bar/something.bin -> something
 // foo.data.txt -> foo
 strip_path_name :: proc "contextless" (str: string) -> (result: string) {
-    back_index := strings.last_index_byte(str,'\\')
-    forw_index := strings.last_index_byte(str,'/')
+    back_index := bytes.last_index_byte(transmute([]byte)str,'\\')
+    forw_index := bytes.last_index_byte(transmute([]byte)str,'/')
     result = str[max(back_index, forw_index) + 1:]
-    dot_index := strings.index_byte(result, '.')
+    dot_index := bytes.index_byte(transmute([]byte)result, '.')
     return result[:dot_index]
+}
+
+@(require_results)
+string_has_suffix :: proc(s, suffix: string) -> bool {
+    return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
+}
+
+@(require_results)
+strings_join :: proc(a: ..string, allocator := context.temp_allocator, loc := #caller_location) -> (res: string, ok: bool) #optional_ok {
+    if len(a) == 0 {
+        return "", false
+    }
+
+    n := 0
+    for s in a {
+        n += len(s)
+    }
+    buf, buf_err := make([]byte, n, allocator, loc)
+    if buf_err != nil {
+        return
+    }
+    i := 0
+    for s in a {
+        i += copy(buf[i:], s)
+    }
+    return string(buf), true
 }
 
 _assertion_failure_proc :: proc(prefix, message: string, loc: runtime.Source_Code_Location) -> ! {

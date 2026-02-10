@@ -4,7 +4,6 @@ package raven_gpu
 
 import "../base"
 
-import "core:strings"
 import "base:intrinsics"
 import "base:runtime"
 import "core:sys/windows"
@@ -405,7 +404,7 @@ when BACKEND == BACKEND_D3D11 {
         res := d3d_compiler.Compile(
             pSrcData = raw_data(data),
             SrcDataSize = len(data),
-            pSourceName = strings.clone_to_cstring(name, context.temp_allocator),
+            pSourceName = clone_to_cstring(name, context.temp_allocator),
             pDefines = nil,
             pInclude = nil,
             pEntrypoint = entry_point_name,

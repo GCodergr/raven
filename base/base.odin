@@ -37,8 +37,26 @@ log :: proc(level: Log_Level, format: string, args: ..any, loc := #caller_locati
     context.logger.procedure(logger.data, level, str, logger.options, location = loc)
 }
 
-// _logger_proc :: proc(logger_data: rawptr, level: runtime.Logger_Level, text: string, options: bit_set[runtime.Logger_Option], location := #caller_location) {
-// }
+_logger_proc :: proc(logger_data: rawptr, level: runtime.Logger_Level, text: string, options: bit_set[runtime.Logger_Option], loc := #caller_location) {
+    // TODO: time, flags, color?
+    ufmt.eprintfln("%s %s(%i:%i) %s: %s",
+        _logger_prefix[level],
+        loc.file_path,
+        loc.line,
+        loc.column,
+        loc.procedure,
+        text,
+    )
+}
+
+@(rodata)
+_logger_prefix := [?]string{
+	 0..<10 = "DBG: ",
+	10..<20 = "INFO:",
+	20..<30 = "WARN:",
+	30..<40 = "ERR: ",
+	40..<50 = "FATAL:",
+}
 
 
 // MARK: Module
