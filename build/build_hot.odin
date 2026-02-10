@@ -4,7 +4,6 @@ package raven_build
 import "core:fmt"
 import "core:strings"
 import "core:strconv"
-import "core:log"
 import "base:runtime"
 import "../platform"
 import "../base"
@@ -18,8 +17,9 @@ when ODIN_OS == .Windows {
 }
 
 Hotreload_Module :: struct {
-    mod:    platform.Module,
-    desc:   base.Module_Desc,
+    mod:        platform.Module,
+    desc:       base.Module_Desc,
+    callback:   proc "contextless" (rawptr, base.Module_Desc) -> rawptr,
 }
 
 Hotreload_File :: struct {
@@ -57,11 +57,11 @@ clean_hot :: proc(pkg: string) {
 }
 
 remove_all :: proc(pattern: string) {
-    log.infof("Removing all '%s'", pattern)
+    base.log_info("Removing all '%s'", pattern)
 
     iter: platform.Directory_Iter
     for path in platform.iter_directory(&iter, pattern, context.temp_allocator) {
-        log.infof("removing '%s'", path)
+        base.log_info("removing '%s'", path)
         platform.delete_file(path)
     }
 }
@@ -107,7 +107,7 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
     initial, initial_ok := hotreload_find_latest_dll(pkg)
 
     if !initial_ok {
-        log.error("Hotreload Error: Couldn't find inital DLL for package:", pkg)
+        base.log_err("Hotreload Error: Couldn't find inital DLL for package:", pkg)
         return false
     }
 
@@ -116,7 +116,7 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
     module, module_ok := load_hotreload_module(initial.path)
 
     if !module_ok {
-        log.error("Hotreload Error: Failed to load initial DLL")
+        base.log_err("Hotreload Error: Failed to load initial DLL")
         return false
     }
 
@@ -134,10 +134,8 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
 
     for {
         assert(module.callback != nil)
-        assert(module.api.init != nil)
-        assert(module.api.update != nil)
 
-        prev_data = module.callback(prev_data, module.api)
+        prev_data = module.callback(prev_data, module.desc)
 
         if prev_data == nil {
             break
@@ -147,7 +145,7 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
 
         changes := platform.watch_file_changes(&watcher)
         for change in changes {
-            // log.info("Hotreload: file changed:", change)
+            // base.log_info("Hotreload: file changed:", change)
             if strings.ends_with(change, ".odin") {
                 any_changes = true
             }
@@ -159,7 +157,7 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
             // EXPERIMENTAL
             // Sometimes fails with:
             // Syntax Error: Failed to parse file: something.odin; invalid file or cannot be found
-            // log.info("HOTRELOADAUTO RECOMPILING")
+            // base.log_info("HOTRELOADAUTO RECOMPILING")
             // compile_hot(pkg_path, pkg, curr_index + 1)
         }
 
@@ -176,10 +174,12 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
                 continue
             }
 
-            log.infof("Hotreload: Loaded %s", new_file.path)
+            base.log_info("Hotreload: Loaded %s", new_file.path)
 
-            if new_module.api.state_size != module.api.state_size {
-                log.errorf("Hotreload: State Size mismatch (new %i vs old %i). You cannot change the State struct layout during hotreload.", new_module.api.state_size, module.api.state_size)
+            if new_module.desc.state_size != module.desc.state_size {
+                base.log_err(
+                    "Hotreload: State size mismatch (new %i vs old %i). You cannot change the State struct layout during hotreload.",
+                    new_module.desc.state_size, module.desc.state_size)
                 return false
             }
 
@@ -196,7 +196,7 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
         platform.unload_module(lib)
     }
 
-    log.info("Hotreload: finished OK")
+    base.log_info("Hotreload: finished OK")
 
     return true
 }
@@ -204,18 +204,25 @@ hotreload_run :: proc(pkg: string, pkg_path: string) -> bool {
 load_hotreload_module :: proc(path: string) -> (result: Hotreload_Module, ok: bool) {
     module, module_ok := platform.load_module(path)
     if !module_ok {
-        log.info("Hotreload: Failed to load library:", path)
+        base.log_err("Hotreload: Failed to load library:", path)
         return {}, false
     }
 
     module_desc_ptr := cast(^base.Module_Desc)platform.module_symbol_address(module, "_module_desc")
 
     if module_desc_ptr == nil {
-        log.info("Hotreload: Failed to find _module_desc data")
+        base.log_err("Hotreload: Failed to find _module_desc data")
         return {}, false
     }
 
     result.desc = module_desc_ptr^
+
+    result.callback = auto_cast(platform.module_symbol_address(module, "_module_hot_step"))
+
+    if result.callback == nil {
+        base.log_err("Hotreload: Failed to find the _module_hot_step proc")
+        return {}, false
+    }
 
     return result, true
 }

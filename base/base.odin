@@ -43,8 +43,7 @@ log :: proc(level: Log_Level, format: string, args: ..any, loc := #caller_locati
 
 // MARK: Module
 
-// WARNING: this structure must match the one in build_hot.odin exactly,
-// since it's passed between DLLs when hot-reloading.
+// NOTE: This structure is passed between DLLs when hot-reloading.
 Module_Desc :: struct {
     state_size: i64,
     init:       Module_Init_Proc,

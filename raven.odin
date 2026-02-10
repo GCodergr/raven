@@ -614,9 +614,14 @@ get_state_ptr :: proc "contextless" () -> (state: ^State) {
 
 
 when ODIN_OS == .JS {
-    @(export) step :: __js_step
+    @(export) step :: proc(dt: f32) -> (keep_running: bool) {
+        return __js_step(dt)
+    }
+
 } else when ODIN_BUILD_MODE == .Dynamic {
-    @(export) _module_hot_step :: __module_hot_step
+    @(export) _module_hot_step :: proc "contextless" (prev_state: ^State, desc: Module_Desc) -> ^State {
+        return __module_hot_step(prev_state, desc)
+    }
 }
 
 
@@ -733,6 +738,8 @@ __module_hot_step :: proc "contextless" (prev_state: ^State, desc: Module_Desc) 
     }
 
     context = get_context()
+
+    assert(desc.update != nil)
 
     if !begin_frame() {
         if desc.shutdown != nil {
