@@ -2,6 +2,7 @@
 #+vet explicit-allocators shadowing unused
 package raven_platform
 
+import "../base"
 import "core:sys/wasm/js"
 
 // // NOTE: frame loop is done by the odin.js repeatedly calling `step`.
@@ -37,7 +38,7 @@ _init :: proc() {
             continue
         }
         if !js.add_window_event_listener(kind, user_data = nil, callback = proc_ptr) {
-            log.error("Failed to add '{}' event listener when initializing", kind)
+            base.log_err("Failed to add '%v' event listener when initializing", kind)
         }
     }
 }
@@ -48,7 +49,7 @@ _shutdown :: proc() {
             continue
         }
         if !js.remove_window_event_listener(kind, user_data = nil, callback = proc_ptr) {
-            log.error("Failed to remove '{}' event listener when shutting down", kind)
+            base.log_err("Failed to remove '%v' event listener when shutting down", kind)
         }
     }
 }
@@ -220,6 +221,11 @@ _window_dpi_scale :: proc(window: Window) -> f32 {
 _set_window_style :: proc(window: Window, style: Window_Style) {
     _js_unsupported()
 }
+
+_set_window_title :: proc(window: Window, name: string) {
+
+}
+
 
 _set_window_pos :: proc(window: Window, pos: [2]i32) {
     _js_unsupported()
@@ -409,7 +415,7 @@ _file_dialog :: proc(mode: File_Dialog_Mode, default_path: string, patterns: []F
 
 _js_unsupported :: proc(loc := #caller_location) {
     // NOTE: this doesn't mean it won't be implemented at some point if possible.
-    // log.warnf("'%s' is not supported on JS target", loc.procedure, location = loc)
+    // base.log_warn("'%s' is not supported on JS target", loc.procedure, loc = loc)
 }
 
 _js_mouse_button :: proc(index: i16) -> Mouse_Button {
@@ -547,6 +553,8 @@ _js_event_callbacks := [js.Event_Kind]_JS_Event_Callback {
             button = _js_mouse_button(e.mouse.button),
             pressed = true,
         })
+
+
     },
 
     .Key_Up = proc(e: js.Event) {
