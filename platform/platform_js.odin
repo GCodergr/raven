@@ -12,6 +12,7 @@ import "core:sys/wasm/js"
 //     return true
 // }
 
+_CANVAS_ID :: "#raven-canvas"
 
 _State :: struct {
     _: u8,
@@ -25,6 +26,7 @@ _Barrier :: struct { _: u8 }
 _Thread :: struct { _: u8 }
 _Window :: struct { _: u8 }
 _Module :: struct { _: u8 }
+
 
 
 
@@ -530,6 +532,16 @@ _js_event_callbacks := [js.Event_Kind]_JS_Event_Callback {
 
     .Mouse_Move = proc(e: js.Event) {
         assert(e.kind == .Mouse_Move)
+
+        // If the app wants the mouse locked, and it's not locked
+        // because the browser decided so (e.g. user pressed Escape),
+        // don't return mouse movement.
+        if _state.mouse_relative {
+            if !_get_pointer_lock(_CANVAS_ID) {
+                return
+            }
+        }
+
         _event_queue_push(Event_Mouse{
             pos = {i32(e.mouse.screen.x), i32(e.mouse.screen.y)},
             move = {i32(e.mouse.movement.x), i32(e.mouse.movement.y)},
@@ -554,7 +566,11 @@ _js_event_callbacks := [js.Event_Kind]_JS_Event_Callback {
             pressed = true,
         })
 
-
+        if _state.mouse_relative {
+            _set_pointer_lock(_CANVAS_ID, true)
+        } else {
+            _set_pointer_lock(_CANVAS_ID, false)
+        }
     },
 
     .Key_Up = proc(e: js.Event) {
@@ -650,4 +666,19 @@ foreign import "odin_env"
 foreign odin_env {
     @(link_name="time_now")     _time_now :: proc "contextless" () -> i64 ---
     @(link_name="tick_now")     _tick_now :: proc "contextless" () -> f64 ---
+}
+
+
+@(export)
+foreign import raven_platform "raven_platform"
+
+@(link_prefix="wgpu", default_calling_convention="c")
+foreign raven_platform {
+    // lock=true Only works when called from user gesture.
+    @(link_name="set_pointer_lock")
+    _set_pointer_lock :: proc "contextless" (canvas: string, lock: b32) ---
+
+    // Check if the mouse is *actually* locked. It doesn't have to be after calling set_pointer_lock.
+    @(link_name="get_pointer_lock")
+    _get_pointer_lock :: proc "contextless" (canvas: string) -> b32 ---
 }

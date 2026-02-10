@@ -330,6 +330,7 @@ get_user_data_dir :: proc(allocator := context.allocator) -> string {
 }
 
 set_mouse_relative :: proc(window: Window, relative: bool) {
+    _state.mouse_relative = relative
     _set_mouse_relative(window, relative)
 }
 

@@ -52,6 +52,11 @@ export_web :: proc(dst_dir: string, pkg_name: string, pkg_path: string) {
         fmt.tprintf("%s/wgpu.js", dst_dir),
         fmt.tprintf("%svendor/wgpu/wgpu.js", ODIN_ROOT),
     )
+
+    clone_file(
+        fmt.tprintf("%s/raven_platform.js", dst_dir),
+        fmt.tprintf("platform/raven_platform.js"), // TODO: raven root path
+    )
 }
 
 clone_file :: proc(dst, src: string) {
@@ -107,14 +112,21 @@ HTML_TEMPLATE :: `
 
 		<script type="text/javascript" src="odin.js"></script>
 		<script type="text/javascript" src="wgpu.js"></script>
+		<script type="text/javascript" src="raven_platform.js"></script>
 		<script type="text/javascript">
 			const mem = new WebAssembly.Memory({ initial: @initial_mem_pages, maximum: @max_mem_pages, shared: false });
 			const memInterface = new odin.WasmMemoryInterface();
 			memInterface.setMemory(mem);
 
 			const wgpuInterface = new odin.WebGPUInterface(memInterface);
+			const ravenPlatformInterface = new odin.RavenPlatformInterface(memInterface);
 
-			odin.runWasm("@pkg.wasm", null, { wgpu: wgpuInterface.getInterface() }, memInterface, /*intSize=8*/);
+            const foreignImports = {
+                wgpu: wgpuInterface.getInterface(),
+                raven_platform: ravenPlatformInterface.getInterface(),
+            }
+
+			odin.runWasm("@pkg.wasm", null, foreignImports, memInterface, /*intSize=8*/);
 		</script>
 	</body>
 </html>
