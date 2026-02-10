@@ -7,6 +7,7 @@ import "../base"
 import ma "vendor:miniaudio"
 
 _ :: ma
+_ :: base
 
 when BACKEND == BACKEND_MINIAUDIO {
 
