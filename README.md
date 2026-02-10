@@ -17,7 +17,9 @@ Windows is most stable, WASM+WebGPU builds usually work but Linux and MacOS isn'
 A game library made specifically for small indie teams and fast iteration times.
 Something *simple* you can prototype in, but also *stable* enough to make polishing a full game straightforward.
 
-Batteries-included toolkit for the entire code and asset pipeline.
+- Batteries-included
+- Simple and hackable
+- Minimal dependencies
 
 Inspired by Sokol, PICO8 and Raylib.
 
@@ -30,22 +32,6 @@ Inspired by Sokol, PICO8 and Raylib.
 - Minimal dependencies
     - the core of the engine is implemented fully from scratch, see `platform` and `gpu`
 
-
-## Roadmap
-- Finish/Rewrite Asset system
-  - Scene asset pipeline
-  - Blender exporter plugin/lib
-- Lightweight shader transpiler
-- SDL3 platform and GPU backend as a fallback
-- Finish Audio system
-  - Web Audio
-- Better fonts
-    - Draw text iterator
-    - Unicode font support (currently only CP437 atlases are supported)
-- Simple GUI and gizmo system
-- Geometry and Collision package
-- Skinned meshes and animations
-- Pakfiles
 
 ## Simple Example
 
@@ -76,8 +62,6 @@ _update :: proc(_: rawptr) -> rawptr {
 }
 ```
 
-To see what the entire full code looks like, check out [examples/hello](examples/hello/hello_example.odin).
-
 # Getting Started
 
 ## Prequisities
@@ -97,6 +81,11 @@ Alternatively you can run them in hot-reload mode:
 odin run build -- run_hot examples\hello
 ```
 
+Recommended examples:
+- [hello](examples/hello/hello_example.odin)
+- [simple_3d](examples/simple_3d/simple_3d_example.odin)
+- [snake_planet game](examples/snake_planet/snake_planet_example.odin)
+
 ## Project Setup
 The recommended approach is using [git subtrees](https://github.com/git/git/blob/master/contrib/subtree/git-subtree.adoc), a nicer alternative to submodules or manual copy-pasting.
 
@@ -114,6 +103,24 @@ git subtree pull --prefix=raven https://github.com/jakubtomsu/raven main --squas
 
 > In case you want to delete the entire subtree, just remove the folder. There shouldn't be any hidden metadata.
 
+
+
+
+## Roadmap
+- Finish/Rewrite Asset system
+  - Scene asset pipeline
+  - Blender exporter plugin/lib
+- Lightweight shader transpiler
+- SDL3 platform and GPU backend as a fallback
+- Finish Audio system
+  - Web Audio
+- Better fonts
+    - Draw text iterator
+    - Unicode font support (currently only CP437 atlases are supported)
+- Simple GUI and gizmo system
+- Geometry and Collision package
+- Skinned meshes and animations
+- Pakfiles
 
 
 # Docs
@@ -135,12 +142,11 @@ To run the app locally, you must also create a tiny HTTP file server (to fetch t
 ```
 python -m http.server 8000
 ```
-And now just enter `localhost:8000` into a browser search bar.
+And now just enter `localhost:8000` into a browser search bar. Alternatively you can use the VSCode live server extension which makes this even nicer.
 
 To see the output log, open up the Developer Tools Console (F12 usually).
 
-Please note this is still very early, the JS platform is unfinished and the WebGPU support might run into some issues.
-You can also ensure WebGPU is behaving correctly locally with `odin run my_package -define:GPU_BACKEND=WGPU`, however the wgpu-native used on desktop can be slightly different than the Chrome Dawn implementation.
+In case you're having issues with rendering, you can test WebGPU is behaving correctly locally with `odin run my_package -define:GPU_BACKEND=WGPU`, however the wgpu-native used on desktop can be slightly different than the Chrome Dawn implementation.
 
 For more detailed information see the source code directly.
 
@@ -222,8 +228,6 @@ oklerp(a, b: Vec4, t: f32) -> Vec4          // Interpolate colors with OKLAB
 
 # Contributing
 For info about bug reports and contributing, see [CONTRIBUTING](CONTRIBUTING.md)
-
-
 
 
 
