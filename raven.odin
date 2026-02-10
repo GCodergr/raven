@@ -678,18 +678,15 @@ run_main_loop :: proc(desc: Module_Desc) {
 __js_step :: proc(dt: f32) -> (keep_running: bool) {
     assert(_state != nil)
     assert(_state.module_desc.update != nil)
-    assert(_state.module_desc.init != nil)
-
-    // In case init returned nil
-    if _state.module_data == nil {
-        return false
-    }
 
     context = get_context()
 
     if !_state.initialized {
-        if _state.gpu_state.init_done {
+        if gpu.is_init_done() {
             _post_gpu_init()
+            if _state.module_desc.init != nil {
+                _state.module_desc.init()
+            }
         } else {
             return true
         }
@@ -983,7 +980,9 @@ _post_gpu_init :: proc() {
 }
 
 request_shutdown :: proc() {
-    _state.shutdown_requested = true
+    when ODIN_OS != .JS {
+        _state.shutdown_requested = true
+    }
 }
 
 // Called automatically at the right time when you call rv.request_shutdown()!

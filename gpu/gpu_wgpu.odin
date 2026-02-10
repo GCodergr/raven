@@ -11,8 +11,7 @@ _ :: intrinsics
 
 when BACKEND == BACKEND_WGPU {
 
-    _WGPU_CALLBACK_MODE: wgpu.CallbackMode:
-        .WaitAnyOnly when ODIN_OS == .JS else .AllowProcessEvents
+    _WGPU_CALLBACK_MODE: wgpu.CallbackMode: .AllowProcessEvents
 
     _BIND_GROUP_CACHE_SIZE :: 512
     _SAMPLER_CACHE_BUCKET :: 8
@@ -76,16 +75,11 @@ when BACKEND == BACKEND_WGPU {
     _init :: proc(native_window: rawptr) -> bool {
 
         inst_desc: wgpu.InstanceDescriptor
-
-        when _WGPU_CALLBACK_MODE == .WaitAnyOnly {
-            inst_desc.features = {
-                timedWaitAnyEnable = true,
-            }
-        }
-
         _state.instance = wgpu.CreateInstance(&inst_desc)
 
-        wgpu.SetLogCallback(_wgpu_log_callback, nil)
+        when ODIN_OS != .JS {
+            wgpu.SetLogCallback(_wgpu_log_callback, nil)
+        }
 
         if _state.instance == nil {
             base.log_err("WebGPU is not supported")
@@ -109,18 +103,14 @@ when BACKEND == BACKEND_WGPU {
             adapter_options.powerPreference = .HighPerformance
         }
 
-        _wgpu_wait(wgpu.InstanceRequestAdapter(
+        wgpu.InstanceRequestAdapter(
             _state.instance,
             options = &adapter_options,
             callbackInfo = {
                 callback = on_adapter,
                 mode = _WGPU_CALLBACK_MODE,
             },
-        ))
-
-        if _WGPU_CALLBACK_MODE == .WaitAnyOnly {
-            _request_wgpu_device()
-        }
+        )
 
         return true
 
@@ -140,9 +130,7 @@ when BACKEND == BACKEND_WGPU {
             }
             _state.adapter = adapter
 
-            if _WGPU_CALLBACK_MODE != .WaitAnyOnly {
-                _request_wgpu_device()
-            }
+            _request_wgpu_device()
         }
     }
 
@@ -160,8 +148,7 @@ when BACKEND == BACKEND_WGPU {
             }
         }
 
-
-        _wgpu_wait(wgpu.AdapterRequestDevice(_state.adapter,
+        wgpu.AdapterRequestDevice(_state.adapter,
             &wgpu.DeviceDescriptor{
                 // requiredFeatureCount = len(required_features),
                 // requiredFeatures = &required_features[0],
@@ -170,7 +157,7 @@ when BACKEND == BACKEND_WGPU {
                 callback = on_device,
                 mode = _WGPU_CALLBACK_MODE,
             },
-        ))
+        )
 
         return
 
@@ -236,7 +223,10 @@ when BACKEND == BACKEND_WGPU {
         assert(_state.render_pass_encoder == nil)
         assert(_state.surface != nil)
 
-        wgpu.InstanceProcessEvents(_state.instance)
+        // The browser event loop does this for us
+        if ODIN_OS != .JS {
+            wgpu.InstanceProcessEvents(_state.instance)
+        }
 
         _state.surface_texture = wgpu.SurfaceGetCurrentTexture(_state.surface)
 
@@ -1171,8 +1161,10 @@ when BACKEND == BACKEND_WGPU {
 
     _wgpu_wait :: proc(future: wgpu.Future) {
         when _WGPU_CALLBACK_MODE == .WaitAnyOnly {
-            future := future
-            res := wgpu.InstanceWaitAny(_state.instance, 1, &future, max(u64))
+            info := wgpu.FutureWaitInfo{
+                future = future,
+            }
+            res := wgpu.InstanceWaitAny(_state.instance, 1, &info, max(u64))
             if res == .Success {
                 return
             }
